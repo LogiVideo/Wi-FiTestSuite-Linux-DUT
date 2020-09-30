@@ -38,6 +38,16 @@
 #include "wfa_types.h"
 #include "wfa_tg.h"
 
+int isString(char *);
+int isNumber(char *);
+int isIpV4Addr(char *);
+double wfa_timeval2double(struct timeval *tval);
+void wfa_double2timeval(struct timeval *tval, double dval);
+double wfa_ftime_diff(struct timeval *t1, struct timeval *t2);
+int wfa_itime_diff(struct timeval *t1, struct timeval *t2);
+void int2BuffBigEndian(int val, char *buf);
+int bigEndianBuff2Int(char *buff);
+
 extern tgStream_t *theStreams;
 
 tgStream_t *findStreamProfile(int id);

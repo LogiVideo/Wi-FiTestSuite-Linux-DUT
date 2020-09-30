@@ -23,11 +23,11 @@
 extern int isString(char *);
 extern int isNumber(char *);
 extern int isIpV4Addr(char *);
-extern inline double wfa_timeval2double(struct timeval *tval);
-extern inline void wfa_double2timeval(struct timeval *tval, double dval);
-extern inline double wfa_ftime_diff(struct timeval *t1, struct timeval *t2);
+extern double wfa_timeval2double(struct timeval *tval);
+extern void wfa_double2timeval(struct timeval *tval, double dval);
+extern double wfa_ftime_diff(struct timeval *t1, struct timeval *t2);
 extern int wfa_itime_diff(struct timeval *t1, struct timeval *t2);
-extern inline void int2BuffBigEndian(int val, char *buf);
-extern inline int bigEndianBuff2Int(char *buff);
+extern void int2BuffBigEndian(int val, char *buf);
+extern int bigEndianBuff2Int(char *buff);
 
 #endif
