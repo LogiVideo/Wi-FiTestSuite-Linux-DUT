@@ -23,7 +23,7 @@
 
 /* the path to store EAP certificates. This is used   */
 /* for Linux-like OS for wpa_supplicant               */
-#define CERTIFICATES_PATH    "/etc/wpa_supplicant"
+#define CERTIFICATES_PATH    "/mnt/data"
 
 
 #define wSTRNCPY(dstr, sstr, len) \
