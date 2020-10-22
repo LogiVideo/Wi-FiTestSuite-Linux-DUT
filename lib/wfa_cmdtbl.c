@@ -158,7 +158,10 @@ xcCommandFuncPtr gWfaCmdFuncTbl[WFA_STA_COMMANDS_END] =
 	wfaStaManageService,         /*   WFA_STA_MANAGE_SERVICE_TLV            (82)*/	
 	wfaStaGetEvents,         /*   WFA_STA_GET_EVENTS_TLV            (83)*/
 	wfaStaGetEventDetails,         /*   WFA_STA_GET_EVENT_DETAILS_TLV            (84)*/	
-	wfaStaExecAction,         /*   WFA_STA_EXEC_ACTION_TLV            (85)*/	
+    wfaStaSetEapAKAPrime,         /*    WFA_STA_SET_EAPAKAPRIME_TLV           (85)*/
+    NotDefinedYet,                /*    None                                  (86)*/
+    wfaStaExecAction,             /*    WFA_STA_EXEC_ACTION_TLV               (87)*/
+    wfaStaScan,                   /*    WFA_STA_SCAN_TLV                      (88)*/
 };
 
 

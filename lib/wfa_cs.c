@@ -33,6 +33,7 @@ THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  *
  */
+#include <stdarg.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
@@ -60,6 +61,8 @@ THE USE OR PERFORMANCE OF THIS SOFTWARE.
 #endif
 
 #define CERTIFICATES_PATH    "/etc/wpa_supplicant"
+#define CERTIFICATES_IDENTITY    "dummy"
+#define CERTIFICATES_PRIVATE_KEY_PASSWD    "wifi"
 
 /* Some device may only support UDP ECHO, activate this line */
 //#define WFA_PING_UDP_ECHO_ONLY 1
@@ -89,6 +92,22 @@ int chk_ret_status()
     else
         return WFA_FAILURE;
 }
+
+/* Helper functions */
+static int wfa_snprintf(char *str, size_t size, const char *format, ...)
+{
+   va_list argp;
+   int     ret;
+
+   va_start(argp, format);
+   ret = vsnprintf(str, size, format, argp);
+   va_end(argp);
+
+   str[size-1] = '\0';
+
+   return (ret);
+}
+
 
 /*
  * agtCmdProcGetVersion(): response "ca_get_version" command to controller
@@ -256,7 +275,7 @@ int wfaStaIsConnected(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
      * use 'wpa_cli' command to check the interface status
      * none, scanning or complete (wpa_supplicant specific)
      */
-    sprintf(gCmdStr, "/sbin/wpa_cli -i%s status | grep ^wpa_state= | cut -f2- -d= > /tmp/.isConnected", ifname);
+    sprintf(gCmdStr, "/usr/local/bin/wpa_cli -i%s status | grep ^wpa_state= | cut -f2- -d= > /tmp/.isConnected", ifname);
     sret = system(gCmdStr);
 
     /*
@@ -339,7 +358,7 @@ int wfaStaGetIpConfig(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
      * (current implementation  specific).
      * note: "getipconfig.sh" is only defined for the current implementation
      */
-    sprintf(gCmdStr, "getipconfig.sh /tmp/ipconfig.txt %s\n", ifname);
+    sprintf(gCmdStr, "/usr/local/sbin/getipconfig.sh /tmp/ipconfig.txt %s\n", ifname);
 
     sret = system(gCmdStr);
 
@@ -623,15 +642,22 @@ int wfaStaVerifyIpConnection(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBu
  */
 int wfaStaGetMacAddress(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
 {
-    dutCommand_t *getMac = (dutCommand_t *)caCmdBuf;
     dutCmdResponse_t *getmacResp = &gGenericResp;
+
+    /* CYPRESS */
+    FILE *tmpfile = NULL;
+    char result[32], result2[32];
+
+
+    DPRINT_INFO(WFA_OUT, "Entering wfaStaGetMacAddress ...\n");
+#if 0 /* CYPRESS */
+    dutCommand_t *getMac = (dutCommand_t *)caCmdBuf;
     char *str;
     char *ifname = getMac->intf;
 
     FILE *tmpfd;
     char string[257];
 
-    DPRINT_INFO(WFA_OUT, "Entering wfaStaGetMacAddress ...\n");
     /*
      * run the script "getipconfig.sh" to find out the mac
      */
@@ -667,12 +693,33 @@ int wfaStaGetMacAddress(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
         strcpy(getmacResp->cmdru.mac, str);
         getmacResp->status = STATUS_COMPLETE;
     }
+#endif
+
+    wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl cur_etheraddr > /tmp/.get_mac");
+    sret = system(gCmdStr);
+
+    /*
+     * the status is saved in a file.  Open the file and check it.
+     */
+    tmpfile = fopen("/tmp/.get_mac", "r+");
+    if(tmpfile == NULL)
+    {
+        DPRINT_ERR(WFA_ERR, "file open failed\n");
+        return WFA_FAILURE;
+    }
+
+    sret = fscanf(tmpfile, "%s %s", (char *)result, (char *)result2);
+
+    strcpy(getmacResp->cmdru.mac, result2);
+    getmacResp->status = STATUS_COMPLETE;
 
     wfaEncodeTLV(WFA_STA_GET_MAC_ADDRESS_RESP_TLV, sizeof(dutCmdResponse_t), (BYTE *)getmacResp, respBuf);
 
     *respLen = WFA_TLV_HDR_LEN + sizeof(dutCmdResponse_t);
 
-    fclose(tmpfd);
+    /* CYPRESS */
+    //fclose(tmpfd);
+     fclose(tmpfile);
     return WFA_SUCCESS;
 }
 
@@ -721,6 +768,7 @@ int wfaSetEncryption1(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
     caStaSetEncryption_t *setEncryp = (caStaSetEncryption_t *)caCmdBuf;
     dutCmdResponse_t *setEncrypResp = &gGenericResp;
 
+    DPRINT_INFO(WFA_OUT, "Entered wfaSetEncryption ...\n");
     /*
      * disable the network first
      */
@@ -764,6 +812,19 @@ int wfaSetEncryption(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
     caStaSetEncryption_t *setEncryp = (caStaSetEncryption_t *)caCmdBuf;
     dutCmdResponse_t *setEncrypResp = &gGenericResp;
     int i;
+
+    DPRINT_INFO(WFA_OUT, "===============================\n");
+    DPRINT_INFO(WFA_OUT, "Entered wfaSetEncryption...\n");
+    DPRINT_INFO(WFA_OUT, "===========================\n");
+    DPRINT_INFO(WFA_OUT, "intf     :%s\n",setEncryp->intf);
+    DPRINT_INFO(WFA_OUT, "ssid     :%s\n",setEncryp->ssid);
+    DPRINT_INFO(WFA_OUT, "encpType :%i\n",setEncryp->encpType);
+    DPRINT_INFO(WFA_OUT, "keys[0]  :%s\n",setEncryp->keys[0]);
+    DPRINT_INFO(WFA_OUT, "keys[1]  :%s\n",setEncryp->keys[1]);
+    DPRINT_INFO(WFA_OUT, "keys[2]  :%s\n",setEncryp->keys[2]);
+    DPRINT_INFO(WFA_OUT, "keys[3]  :%s\n",setEncryp->keys[3]);
+    DPRINT_INFO(WFA_OUT, "actKeyIdx:%i\n",setEncryp->activeKeyIdx);
+    DPRINT_INFO(WFA_OUT, "===========================\n");
 
     /*
      * disable the network first
@@ -835,6 +896,53 @@ int wfaStaSetSecurity(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
 {
     int ret = WFA_SUCCESS;
 
+    dutCmdResponse_t *setSecurityResp = &gGenericResp;
+    caStaSetSecurity_t *ssec = (caStaSetSecurity_t *)caCmdBuf;
+
+    DPRINT_INFO(WFA_OUT, "Inside wfaStaSetSecurity function ...\n");
+    DPRINT_INFO(WFA_OUT, "Security TYPE-0:open,1:PSK,2:TLS,3:TTLS,4:PEAP,5:SIM,6:FAST,7:AKA,8:AKAPrime\n");
+    switch(ssec->type)
+    {
+        case SEC_TYPE_OPEN :
+            DPRINT_INFO(WFA_OUT, "Received Security Type : OPEN...TYPE [0]\n");
+            wfaSetEncryption(0, (BYTE *)&ssec->secu.sencryp, respLen, respBuf);
+            break;
+        case SEC_TYPE_PSK :
+            DPRINT_INFO(WFA_OUT, "Received Security Type : PSK...TYPE [1]\n");
+            wfaStaSetPSK(0, (BYTE *)&ssec->secu.psk, respLen, respBuf);
+            break;
+        case SEC_TYPE_EAPTLS :
+            DPRINT_INFO(WFA_OUT, "Received Security Type : TLS ...TYPE [2]\n");
+            wfaStaSetEapTLS(0, (BYTE *)&ssec->secu.tls, respLen, respBuf);
+            break;
+        case SEC_TYPE_EAPTTLS:
+            DPRINT_INFO(WFA_OUT, "Received Security Type : TTLS...TYPE [3]\n");
+            wfaStaSetEapTTLS(0, (BYTE *)&ssec->secu.ttls, respLen, respBuf);
+            break;
+        case SEC_TYPE_EAPPEAP:
+            DPRINT_INFO(WFA_OUT, "Received Security Type : PEAP...TYPE [4]\n");
+            wfaStaSetPEAP(0, (BYTE *)&ssec->secu.peap, respLen, respBuf);
+            break;
+        case SEC_TYPE_EAPSIM :
+            DPRINT_INFO(WFA_OUT, "Received Security Type : SIM...TYPE [5]\n");
+            wfaStaSetEapSIM(0, (BYTE *)&ssec->secu.sim, respLen, respBuf);
+            break;
+        case SEC_TYPE_EAPFAST:
+            DPRINT_INFO(WFA_OUT, "Received Security Type : FAST...TYPE [6]\n");
+            wfaStaSetEapFAST(0, (BYTE *)&ssec->secu.fast, respLen, respBuf);
+            break;
+        case SEC_TYPE_EAPAKA :
+            DPRINT_INFO(WFA_OUT, "Received Security Type : AKA ...TYPE [7]\n");
+            wfaStaSetEapAKA(0, (BYTE *)&ssec->secu.aka, respLen, respBuf);
+            break;
+        case SEC_TYPE_EAPAKAPRIME:
+            DPRINT_INFO(WFA_OUT, "Received Security Type : AKAPRIME...TYPE [8]\n");
+            wfaStaSetEapAKAPrime(0, (BYTE *)&ssec->secu.akaprime, respLen, respBuf);
+            break;
+        default : ret = WFA_FAILURE;
+    }
+    setSecurityResp->status = STATUS_COMPLETE;
+    wfaEncodeTLV(WFA_STA_SET_SECURITY_RESP_TLV, 4, (BYTE *)setSecurityResp, respBuf);
     return ret;
 }
 
@@ -853,8 +961,6 @@ int wfaStaSetEapTLS(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
     char *ifname = setTLS->intf;
     dutCmdResponse_t *setEapTlsResp = &gGenericResp;
 
-    DPRINT_INFO(WFA_OUT, "Entering wfaStaSetEapTLS ...\n");
-
     /*
      * need to store the trustedROOTCA and clientCertificate into a file first.
      */
@@ -863,12 +969,46 @@ int wfaStaSetEapTLS(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
     sret = system(gCmdStr);
 #else
 
-    sprintf(gCmdStr, "wpa_cli -i %s disable_network 0", ifname);
+    DPRINT_INFO(WFA_OUT, "===============================\n");
+    DPRINT_INFO(WFA_OUT, "Entered wfaStaSetEapTLS ...\n");
+    DPRINT_INFO(WFA_OUT, "===============================\n");
+    DPRINT_INFO(WFA_OUT, "intf         :%s\n",setTLS->intf);
+    DPRINT_INFO(WFA_OUT, "ssid         :%s\n",setTLS->ssid);
+    DPRINT_INFO(WFA_OUT, "username     :%s\n",setTLS->username);
+    DPRINT_INFO(WFA_OUT, "keyMgmtTy    :%s\n",setTLS->keyMgmtType);
+    DPRINT_INFO(WFA_OUT, "encpType     :%s\n",setTLS->encrptype);
+    DPRINT_INFO(WFA_OUT, "trustedRootCA:%s\n",setTLS->trustedRootCA);
+    DPRINT_INFO(WFA_OUT, "clientcertif :%s\n",setTLS->clientCertificate);
+    DPRINT_INFO(WFA_OUT, "pmf          :%i\n",setTLS->pmf);
+    DPRINT_INFO(WFA_OUT, "micAlg       :%s\n",setTLS->micAlg);
+    DPRINT_INFO(WFA_OUT, "===========================\n");
+
+    //cypress sprintf(gCmdStr, "wpa_cli -i %s disable_network 0", ifname);
+    sprintf(gCmdStr, "wpa_cli -i %s remove_network all", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+    sret = system(gCmdStr);
+    //
+    sprintf(gCmdStr, "wpa_cli -i %s add_network", setTLS->intf);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     /* ssid */
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ssid '\"%s\"'", ifname, setTLS->ssid);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
+
+    if(strcasecmp(setTLS->encrptype, "aes") == 0 ||
+        strcasecmp(setTLS->encrptype, "ccmp") == 0 ||
+        strcasecmp(setTLS->encrptype, "aes-ccmp") == 0)
+    {
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 pairwise CCMP", setTLS->intf);
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        sret = system(gCmdStr);
+
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 group CCMP", setTLS->intf);
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        sret = system(gCmdStr);
+    }
 
     /* key management */
     if(strcasecmp(setTLS->keyMgmtType, "wpa2-sha256") == 0)
@@ -883,38 +1023,88 @@ int wfaStaSetEapTLS(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
     }
     else if(strcasecmp(setTLS->keyMgmtType, "wpa") == 0)
     {
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 proto WPA", ifname);
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        sret = system(gCmdStr);
         sprintf(gCmdStr, "wpa_cli -i %s set_network 0 key_mgmt WPA-EAP", ifname);
     }
     else if(strcasecmp(setTLS->keyMgmtType, "wpa2") == 0)
     {
         // to take all and device to pick any one supported.
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 proto RSN", setTLS->intf);
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        sret = system(gCmdStr);
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 key_mgmt WPA-EAP", ifname);
     }
     else
     {
         // ??
     }
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     /* protocol WPA */
-    sprintf(gCmdStr, "wpa_cli -i %s set_network 0 proto WPA", ifname);
-    sret = system(gCmdStr);
-
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 eap TLS", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
-    sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ca_cert '\"%s\"'", ifname, setTLS->trustedRootCA);
+    sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ca_cert '\"%s/%s\"'", ifname, CERTIFICATES_PATH, setTLS->trustedRootCA);
+    //original: sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ca_cert '\"%s\"'", ifname, setTLS->trustedRootCA);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
-    sprintf(gCmdStr, "wpa_cli -i %s set_network 0 identity '\"wifi-user@wifilabs.local\"'", ifname);
+    sprintf(gCmdStr, "wpa_cli -i %s set_network 0 client_cert '\"%s/%s\"'", ifname, CERTIFICATES_PATH, setTLS->clientCertificate);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+    sret = system(gCmdStr);
+
+    sprintf(gCmdStr, "wpa_cli -i %s set_network 0 identity '\"%s\"'", ifname, CERTIFICATES_IDENTITY);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 private_key '\"%s/%s\"'", ifname, CERTIFICATES_PATH, setTLS->clientCertificate);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
-    sprintf(gCmdStr, "wpa_cli -i %s set_network 0 private_key_passwd '\"wifi\"'", ifname);
+    sprintf(gCmdStr, "wpa_cli -i %s set_network 0 private_key_passwd '\"%s\"'", ifname, CERTIFICATES_PRIVATE_KEY_PASSWD);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
+
+    /* if PMF enable */
+    if(setTLS->pmf == WFA_ENABLED || setTLS->pmf == WFA_OPTIONAL)
+    {
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ieee80211w %d", setTLS->intf, 1);
+    }
+    else if(setTLS->pmf == WFA_REQUIRED)
+    {
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ieee80211w %d", setTLS->intf, 2);
+    }
+    else if(setTLS->pmf == WFA_F_REQUIRED)
+    {
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ieee80211w %d", setTLS->intf, 2);
+    }
+    else if(setTLS->pmf == WFA_F_DISABLED)
+    {
+        /* Disable PMF */
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ieee80211w %d", setTLS->intf, 0);
+    }
+    else
+    {
+        /* Disable PMF */
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ieee80211w %d", setTLS->intf, 0);
+    }
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+    sret = system(gCmdStr); /* PMF cmd */
+
+    if(setTLS->pmf == WFA_ENABLED || setTLS->pmf == WFA_OPTIONAL ||
+        setTLS->pmf == WFA_REQUIRED || setTLS->pmf == WFA_F_REQUIRED)
+    {
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 key_mgmt WPA-EAP WPA-EAP-SHA256", setTLS->intf);
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        sret = system(gCmdStr);
+    }
 
     sprintf(gCmdStr, "wpa_cli -i %s enable_network 0", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 #endif
 
@@ -939,22 +1129,61 @@ int wfaStaSetPSK(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
 
 #ifndef WFA_PC_CONSOLE
     caStaSetPSK_t *setPSK = (caStaSetPSK_t *)caCmdBuf;
+
+    DPRINT_INFO(WFA_OUT, "===============================\n");
+    DPRINT_INFO(WFA_OUT, "Entered wfaStaSetPSK ...\n");
+    DPRINT_INFO(WFA_OUT, "===========================\n");
+    DPRINT_INFO(WFA_OUT, "intf     :%s\n",setPSK->intf);
+    DPRINT_INFO(WFA_OUT, "ssid     :%s\n",setPSK->ssid);
+    DPRINT_INFO(WFA_OUT, "passphra :%s\n",setPSK->passphrase);
+    DPRINT_INFO(WFA_OUT, "keyMgmtTy:%s\n",setPSK->keyMgmtType);
+    DPRINT_INFO(WFA_OUT, "encpType :%i\n",setPSK->encpType);
+    DPRINT_INFO(WFA_OUT, "pmf      :%i\n",setPSK->pmf);
+    DPRINT_INFO(WFA_OUT, "micAlg   :%s\n",setPSK->micAlg);
+    DPRINT_INFO(WFA_OUT, "prog     :%s\n",setPSK->prog);
+    DPRINT_INFO(WFA_OUT, "prefer   :%i\n",setPSK->prefer);
+    DPRINT_INFO(WFA_OUT, "===========================\n");
+
 #ifdef WFA_NEW_CLI_FORMAT
     sprintf(gCmdStr, "wfa_set_psk %s %s %s", setPSK->intf, setPSK->ssid, setPSK->passphrase);
     sret = system(gCmdStr);
 #else
-    sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ssid '\"%s\"'", setPSK->intf, setPSK->ssid);
+    sprintf(gCmdStr, "wpa_cli -i %s remove_network all", setPSK->intf);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
-    if(strcasecmp(setPSK->keyMgmtType, "wpa2-sha256") == 0)
+    sprintf(gCmdStr, "wpa_cli -i %s add_network", setPSK->intf);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+    sret = system(gCmdStr);
+
+    sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ssid '\"%s\"'", setPSK->intf, setPSK->ssid);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+    sret = system(gCmdStr);
+
+    if(strcasecmp(setPSK->keyMgmtType, "wpa2-sha256") == 0) {
         sprintf(gCmdStr, "wpa_cli -i %s set_network 0 key_mgmt WPA2-SHA256", setPSK->intf);
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        sret = system(gCmdStr);
+    }
     else if(strcasecmp(setPSK->keyMgmtType, "wpa2") == 0)
     {
         // take all and device to pick it supported.
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 key_mgmt WPA-PSK", setPSK->intf);
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        sret = system(gCmdStr);
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 proto RSN", setPSK->intf);
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        sret = system(gCmdStr);
     }
     else if(strcasecmp(setPSK->keyMgmtType, "wpa2-psk") == 0)
     {
 
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 key_mgmt WPA-PSK", setPSK->intf);
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        sret = system(gCmdStr);
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 proto RSN", setPSK->intf);
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        sret = system(gCmdStr);
     }
     else if(strcasecmp(setPSK->keyMgmtType, "wpa2-ft") == 0)
     {
@@ -964,39 +1193,60 @@ int wfaStaSetPSK(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
     {
 
     }
-    else
+    else {
         sprintf(gCmdStr, "wpa_cli -i %s set_network 0 key_mgmt WPA-PSK", setPSK->intf);
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        sret = system(gCmdStr);
 
-    sret = system(gCmdStr);
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 proto WPA", setPSK->intf);
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        sret = system(gCmdStr);
+    }
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 psk '\"%s\"'", setPSK->intf, setPSK->passphrase);
-    sret = system(gCmdStr);
-
-    sprintf(gCmdStr, "wpa_cli -i %s enable_network 0", setPSK->intf);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     /* if PMF enable */
     if(setPSK->pmf == WFA_ENABLED || setPSK->pmf == WFA_OPTIONAL)
     {
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 key_mgmt WPA-PSK WPA-PSK-SHA256", setPSK->intf);
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        sret = system(gCmdStr);
 
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ieee80211w %d", setPSK->intf, 1);
     }
     else if(setPSK->pmf == WFA_REQUIRED)
     {
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 key_mgmt WPA-PSK WPA-PSK-SHA256", setPSK->intf);
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        sret = system(gCmdStr);
 
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ieee80211w %d", setPSK->intf, 2);
     }
     else if(setPSK->pmf == WFA_F_REQUIRED)
     {
-
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 key_mgmt WPA-PSK WPA-PSK-SHA256", setPSK->intf);
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        sret = system(gCmdStr);
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ieee80211w %d", setPSK->intf, 2);
     }
     else if(setPSK->pmf == WFA_F_DISABLED)
     {
-
+        /* Disable PMF */
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ieee80211w %d", setPSK->intf, 0);
     }
     else
     {
         /* Disable PMF */
-
+        sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ieee80211w %d", setPSK->intf, 1);
     }
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+    sret = system(gCmdStr); /* PMF cmd */
+
+    sprintf(gCmdStr, "wpa_cli -i %s enable_network 0", setPSK->intf);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+    sret = system(gCmdStr);
 
 #endif
 
@@ -1018,11 +1268,12 @@ int wfaStaGetInfo(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
     dutCmdResponse_t infoResp;
     dutCommand_t *getInfo = (dutCommand_t *)caCmdBuf;
 
+    DPRINT_INFO(WFA_OUT, "Entering %s ...\n", __FUNCTION__);
     /*
      * Normally this is called to retrieve the vendor information
      * from a interface, no implement yet
      */
-    sprintf(infoResp.cmdru.info, "interface,%s,vendor,XXX,cardtype,802.11a/b/g", getInfo->intf);
+    sprintf(infoResp.cmdru.info, "interface,%s,vendor,Cypress,cardtype,802.11a/b/g/n/ac/ax", getInfo->intf);
 
     infoResp.status = STATUS_COMPLETE;
     wfaEncodeTLV(WFA_STA_GET_INFO_RESP_TLV, sizeof(infoResp), (BYTE *)&infoResp, respBuf);
@@ -1052,19 +1303,40 @@ int wfaStaSetEapTTLS(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
     sret = system(gCmdStr);
 #else
 
+    DPRINT_INFO(WFA_OUT, "===============================\n");
+    DPRINT_INFO(WFA_OUT, "Entered wfaStaSetEapTTLS ..\n");
+    DPRINT_INFO(WFA_OUT, "===============================\n");
+    DPRINT_INFO(WFA_OUT, "intf         :%s\n",setTTLS->intf);
+    DPRINT_INFO(WFA_OUT, "ssid         :%s\n",setTTLS->ssid);
+    DPRINT_INFO(WFA_OUT, "username     :%s\n",setTTLS->username);
+    DPRINT_INFO(WFA_OUT, "keyMgmtTy    :%s\n",setTTLS->keyMgmtType);
+    DPRINT_INFO(WFA_OUT, "encpType     :%s\n",setTTLS->encrptype);
+    DPRINT_INFO(WFA_OUT, "trustedRootCA:%s\n",setTTLS->trustedRootCA);
+    DPRINT_INFO(WFA_OUT, "clientcertif :%s\n",setTTLS->clientCertificate);
+    DPRINT_INFO(WFA_OUT, "pmf          :%i\n",setTTLS->pmf);
+    DPRINT_INFO(WFA_OUT, "micAlg       :%s\n",setTTLS->micAlg);
+    DPRINT_INFO(WFA_OUT, "prog         :%s\n",setTTLS->prog);
+    DPRINT_INFO(WFA_OUT, "prefer       :%i\n",setTTLS->prefer);
+    DPRINT_INFO(WFA_OUT, "===========================\n");
+
     sprintf(gCmdStr, "wpa_cli -i %s disable_network 0", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ssid '\"%s\"'", ifname, setTTLS->ssid);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 identity '\"%s\"'", ifname, setTTLS->username);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 password '\"%s\"'", ifname, setTTLS->passwd);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 key_mgmt WPA-EAP", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     /* This may not need to set. if it is not set, default to take all */
@@ -1094,18 +1366,23 @@ int wfaStaSetEapTTLS(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 eap TTLS", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ca_cert '\"%s/%s\"'", ifname, CERTIFICATES_PATH, setTTLS->trustedRootCA);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 proto WPA", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 phase2 '\"auth=MSCHAPV2\"'", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s enable_network 0", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 #endif
 
@@ -1135,27 +1412,49 @@ int wfaStaSetEapSIM(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
     sprintf(gCmdStr, "wfa_set_eapsim %s %s %s %s", ifname, setSIM->ssid, setSIM->username, setSIM->encrptype);
     sret = system(gCmdStr);
 #else
+    DPRINT_INFO(WFA_OUT, "===============================\n");
+    DPRINT_INFO(WFA_OUT, "Entered wfaStaSetEapSIM ...\n");
+    DPRINT_INFO(WFA_OUT, "===============================\n");
+    DPRINT_INFO(WFA_OUT, "intf         :%s\n",setSIM->intf);
+    DPRINT_INFO(WFA_OUT, "ssid         :%s\n",setSIM->ssid);
+    DPRINT_INFO(WFA_OUT, "username     :%s\n",setSIM->username);
+    DPRINT_INFO(WFA_OUT, "passwd       :%s\n",setSIM->passwd);
+    DPRINT_INFO(WFA_OUT, "keyMgmtTy    :%s\n",setSIM->keyMgmtType);
+    DPRINT_INFO(WFA_OUT, "encpType     :%s\n",setSIM->encrptype);
+    DPRINT_INFO(WFA_OUT, "trippleCount :%i\n",setSIM->tripletCount);
+    DPRINT_INFO(WFA_OUT, "trippleSet[0]:%s\n",setSIM->tripletSet[0]);
+    DPRINT_INFO(WFA_OUT, "trippleSet[1]:%s\n",setSIM->tripletSet[1]);
+    DPRINT_INFO(WFA_OUT, "trippleSet[2]:%s\n",setSIM->tripletSet[2]);
+    DPRINT_INFO(WFA_OUT, "pmf          :%i\n",setSIM->pmf);
+    DPRINT_INFO(WFA_OUT, "===========================\n");
 
     sprintf(gCmdStr, "wpa_cli -i %s disable_network 0", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ssid '\"%s\"'", ifname, setSIM->ssid);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 identity '\"%s\"'", ifname, setSIM->username);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 pairwise '\"%s\"'", ifname, setSIM->encrptype);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 eap SIM", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 proto WPA", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s enable_network 0", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     if(strcasecmp(setSIM->keyMgmtType, "wpa2-sha256") == 0)
@@ -1182,6 +1481,7 @@ int wfaStaSetEapSIM(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
     {
         // ??
     }
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
 #endif
@@ -1219,25 +1519,47 @@ int wfaStaSetPEAP(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
     sret = system(gCmdStr);
 #else
 
+    DPRINT_INFO(WFA_OUT, "===============================\n");
+    DPRINT_INFO(WFA_OUT, "Entered wfaStaSetPEAP .....\n");
+    DPRINT_INFO(WFA_OUT, "===============================\n");
+    DPRINT_INFO(WFA_OUT, "intf         :%s\n",setPEAP->intf);
+    DPRINT_INFO(WFA_OUT, "ssid         :%s\n",setPEAP->ssid);
+    DPRINT_INFO(WFA_OUT, "username     :%s\n",setPEAP->username);
+    DPRINT_INFO(WFA_OUT, "passwd       :%s\n",setPEAP->passwd);
+    DPRINT_INFO(WFA_OUT, "keyMgmtTy    :%s\n",setPEAP->keyMgmtType);
+    DPRINT_INFO(WFA_OUT, "encpType     :%s\n",setPEAP->encrptype);
+    DPRINT_INFO(WFA_OUT, "trustedRootCA:%s\n",setPEAP->trustedRootCA);
+    DPRINT_INFO(WFA_OUT, "innerEAP     :%s\n",setPEAP->innerEAP);
+    DPRINT_INFO(WFA_OUT, "peapVersion  :%i\n",setPEAP->peapVersion);
+    DPRINT_INFO(WFA_OUT, "pmf          :%i\n",setPEAP->pmf);
+    DPRINT_INFO(WFA_OUT, "===========================\n");
+
     sprintf(gCmdStr, "wpa_cli -i %s disable_network 0", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ssid '\"%s\"'", ifname, setPEAP->ssid);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 eap PEAP", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 anonymous_identity '\"anonymous\"' ", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 identity '\"%s\"'", ifname, setPEAP->username);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 password '\"%s\"'", ifname, setPEAP->passwd);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ca_cert '\"%s/%s\"'", ifname, CERTIFICATES_PATH, setPEAP->trustedRootCA);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     if(strcasecmp(setPEAP->keyMgmtType, "wpa2-sha256") == 0)
@@ -1264,15 +1586,19 @@ int wfaStaSetPEAP(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
     {
         // ??
     }
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 phase1 '\"peaplabel=%i\"'", ifname, setPEAP->peapVersion);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 phase2 '\"auth=%s\"'", ifname, setPEAP->innerEAP);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s enable_network 0", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 #endif
 
@@ -1376,10 +1702,12 @@ int wfaDeviceGetInfo(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
     caDevInfo_t *devInfo = &dutCmd->cmdsu.dev;
     dutCmdResponse_t *infoResp = &gGenericResp;
     /*a vendor can fill in the proper info or anything non-disclosure */
-    caDeviceGetInfoResp_t dinfo = {"WFA Lab", "DemoUnit", WFA_SYSTEM_VER};
+    caDeviceGetInfoResp_t dinfo = {"Cypress", "CYW89351", "16.10","\n"};    
 
     DPRINT_INFO(WFA_OUT, "Entering wfaDeviceGetInfo ...\n");
 
+    memset(&infoResp->cmdru.devInfo, 0, sizeof(infoResp->cmdru.devInfo));
+    strncpy(infoResp->cmdru.devInfo.vendor, "Cypress", sizeof(infoResp->cmdru.devInfo.vendor));
     if(devInfo->fw == 0)
         memcpy(&infoResp->cmdru.devInfo, &dinfo, sizeof(caDeviceGetInfoResp_t));
     else
@@ -1940,17 +2268,36 @@ int wfaStaSetEapFAST(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
             setFAST->innerEAP);
     sret = system(gCmdStr);
 #else
+    DPRINT_INFO(WFA_OUT, "===============================\n");
+    DPRINT_INFO(WFA_OUT, "Entered wfaStaSetEapFAST ..\n");
+    DPRINT_INFO(WFA_OUT, "===============================\n");
+    DPRINT_INFO(WFA_OUT, "intf         :%s\n",setFAST->intf);
+    DPRINT_INFO(WFA_OUT, "ssid         :%s\n",setFAST->ssid);
+    DPRINT_INFO(WFA_OUT, "username     :%s\n",setFAST->username);
+    DPRINT_INFO(WFA_OUT, "passwd       :%s\n",setFAST->passwd);
+    DPRINT_INFO(WFA_OUT, "keyMgmtTy    :%s\n",setFAST->keyMgmtType);
+    DPRINT_INFO(WFA_OUT, "encpType     :%s\n",setFAST->encrptype);
+    DPRINT_INFO(WFA_OUT, "trustedRootCA:%s\n",setFAST->trustedRootCA);
+    DPRINT_INFO(WFA_OUT, "innerEAP     :%s\n",setFAST->innerEAP);
+    DPRINT_INFO(WFA_OUT, "validateServ :%i\n",setFAST->validateServer);
+    DPRINT_INFO(WFA_OUT, "pacFileName  :%s\n",setFAST->pacFileName);
+    DPRINT_INFO(WFA_OUT, "pmf          :%i\n",setFAST->pmf);
+    DPRINT_INFO(WFA_OUT, "===========================\n");
 
     sprintf(gCmdStr, "wpa_cli -i %s disable_network 0", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ssid '\"%s\"'", ifname, setFAST->ssid);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 identity '\"%s\"'", ifname, setFAST->username);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 password '\"%s\"'", ifname, setFAST->passwd);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     if(strcasecmp(setFAST->keyMgmtType, "wpa2-sha256") == 0)
@@ -1975,24 +2322,31 @@ int wfaStaSetEapFAST(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
     {
         // ??
     }
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 eap FAST", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 pac_file '\"%s/%s\"'", ifname, CERTIFICATES_PATH,     setFAST->pacFileName);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 anonymous_identity '\"anonymous\"'", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 phase1 '\"fast_provisioning=1\"'", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 phase2 '\"auth=%s\"'", ifname,setFAST->innerEAP);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s enable_network 0", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 #endif
 
@@ -2013,11 +2367,28 @@ int wfaStaSetEapAKA(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
     sprintf(gCmdStr, "wfa_set_eapaka %s %s %s %s", ifname, setAKA->ssid, setAKA->username, setAKA->passwd);
     sret = system(gCmdStr);
 #else
+    DPRINT_INFO(WFA_OUT, "===============================\n");
+    DPRINT_INFO(WFA_OUT, "Entered wfaStaSetEapAKA ...\n");
+    DPRINT_INFO(WFA_OUT, "===============================\n");
+    DPRINT_INFO(WFA_OUT, "intf         :%s\n",setAKA->intf);
+    DPRINT_INFO(WFA_OUT, "ssid         :%s\n",setAKA->ssid);
+    DPRINT_INFO(WFA_OUT, "username     :%s\n",setAKA->username);
+    DPRINT_INFO(WFA_OUT, "passwd       :%s\n",setAKA->passwd);
+    DPRINT_INFO(WFA_OUT, "keyMgmtTy    :%s\n",setAKA->keyMgmtType);
+    DPRINT_INFO(WFA_OUT, "encpType     :%s\n",setAKA->encrptype);
+    DPRINT_INFO(WFA_OUT, "trippleCount :%i\n",setAKA->tripletCount);
+    DPRINT_INFO(WFA_OUT, "trippleSet[0]:%s\n",setAKA->tripletSet[0]);
+    DPRINT_INFO(WFA_OUT, "trippleSet[1]:%s\n",setAKA->tripletSet[1]);
+    DPRINT_INFO(WFA_OUT, "trippleSet[2]:%s\n",setAKA->tripletSet[2]);
+    DPRINT_INFO(WFA_OUT, "pmf          :%i\n",setAKA->pmf);
+    DPRINT_INFO(WFA_OUT, "===========================\n");
 
     sprintf(gCmdStr, "wpa_cli -i %s disable_network 0", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 ssid '\"%s\"'", ifname, setAKA->ssid);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     if(strcasecmp(setAKA->keyMgmtType, "wpa2-sha256") == 0)
@@ -2042,26 +2413,34 @@ int wfaStaSetEapAKA(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
     {
         // ??
     }
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 proto WPA2", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 proto CCMP", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 eap AKA", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 phase1 \"result_ind=1\"", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 identity '\"%s\"'", ifname, setAKA->username);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s set_network 0 password '\"%s\"'", ifname, setAKA->passwd);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 
     sprintf(gCmdStr, "wpa_cli -i %s enable_network 0", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
     sret = system(gCmdStr);
 #endif
 
@@ -2071,6 +2450,109 @@ int wfaStaSetEapAKA(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
 
     return WFA_SUCCESS;
 }
+
+/* EAP-AKA' */
+int wfaStaSetEapAKAPrime(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
+{
+    caStaSetEapAKAPrime_t *setAKAPrime = (caStaSetEapAKAPrime_t *)caCmdBuf;
+    char *ifname = setAKAPrime->intf;
+    dutCmdResponse_t *setEapAkaPrimeResp = &gGenericResp;
+
+#ifdef WFA_NEW_CLI_FORMAT
+    sprintf(gCmdStr, "wfa_set_eapakaprime %s %s %s %s", ifname, setAKAPrime->ssid, setAKAPrime->username, setAKAPrime->passwd);
+    sret = system(gCmdStr);
+#else
+    DPRINT_INFO(WFA_OUT, "===============================\n");
+    DPRINT_INFO(WFA_OUT, "Entered wfaStaSetEapAKAPrime ..\n");
+    DPRINT_INFO(WFA_OUT, "===============================\n");
+    DPRINT_INFO(WFA_OUT, "intf         :%s\n",setAKAPrime->intf);
+    DPRINT_INFO(WFA_OUT, "ssid         :%s\n",setAKAPrime->ssid);
+    DPRINT_INFO(WFA_OUT, "username     :%s\n",setAKAPrime->username);
+    DPRINT_INFO(WFA_OUT, "passwd       :%s\n",setAKAPrime->passwd);
+    DPRINT_INFO(WFA_OUT, "keyMgmtTy    :%s\n",setAKAPrime->keyMgmtType);
+    DPRINT_INFO(WFA_OUT, "encpType     :%s\n",setAKAPrime->encrptype);
+    DPRINT_INFO(WFA_OUT, "===========================\n");
+
+    sprintf(gCmdStr, "wpa_cli -i%s remove_network 0", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+    sret = system(gCmdStr);
+
+    sprintf(gCmdStr, "wpa_cli -i%s add_network", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+    sret = system(gCmdStr);
+
+    if(strcasecmp(setAKAPrime->keyMgmtType, "wpa2-sha256") == 0)
+    {
+    }
+    else if(strcasecmp(setAKAPrime->keyMgmtType, "wpa2-eap") == 0)
+    {
+    }
+    else if(strcasecmp(setAKAPrime->keyMgmtType, "wpa2-ft") == 0)
+    {
+ 
+    }
+    else if(strcasecmp(setAKAPrime->keyMgmtType, "wpa") == 0)
+    {
+       sprintf(gCmdStr, "wpa_cli -i%s set_network 0 key_mgmt WPA-EAP", ifname);
+    }
+    else if(strcasecmp(setAKAPrime->keyMgmtType, "wpa2") == 0)
+    {
+      // take all and device to pick one which is supported.
+      sprintf(gCmdStr, "wpa_cli -i%s set_network 0 key_mgmt WPA-EAP", ifname);
+    }
+    else
+    {
+       // ??
+       setEapAkaPrimeResp->status = STATUS_INVALID;
+       strcpy(setEapAkaPrimeResp->cmdru.info, "invalid key management parameter");
+       wfaEncodeTLV(WFA_STA_SET_EAPAKAPRIME_RESP_TLV, sizeof(dutCmdResponse_t), (BYTE *)setEapAkaPrimeResp, respBuf);
+       *respLen = WFA_TLV_HDR_LEN + sizeof(dutCmdResponse_t);
+       return WFA_FAILURE;
+    }
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+    sret = system(gCmdStr);
+
+    sprintf(gCmdStr, "wpa_cli -i%s set_network 0 pairwise CCMP", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+    sret = system(gCmdStr);
+
+    sprintf(gCmdStr, "wpa_cli -i%s set_network 0 proto WPA2", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+    sret = system(gCmdStr);
+
+    sprintf(gCmdStr, "wpa_cli -i%s set_network 0 eap AKA\\'", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+    sret = system(gCmdStr);
+
+    sprintf(gCmdStr, "wpa_cli -i%s set_network 0 phase1 '\"result_ind=1\"'", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+    sret = system(gCmdStr);
+
+    sprintf(gCmdStr, "wpa_cli -i%s set_network 0 identity '\"%s\"'", ifname, setAKAPrime->username);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+    sret = system(gCmdStr);
+
+    sprintf(gCmdStr, "wpa_cli -i%s set_network 0 password '\"%s\"'", ifname, setAKAPrime->passwd);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+    sret = system(gCmdStr);
+
+    sprintf(gCmdStr, "wpa_cli -i%s set_network 0 ssid '\"%s\"'", ifname, setAKAPrime->ssid);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+    sret = system(gCmdStr);
+
+    sprintf(gCmdStr, "wpa_cli -i%s enable_network 0", ifname);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+    sret = system(gCmdStr);
+#endif
+
+    setEapAkaPrimeResp->status = STATUS_COMPLETE;
+    wfaEncodeTLV(WFA_STA_SET_EAPAKAPRIME_RESP_TLV, 4, (BYTE *)setEapAkaPrimeResp, respBuf);
+    *respLen = WFA_TLV_HDR_LEN + 4;
+
+    return WFA_SUCCESS;
+}
+
+
 
 int wfaStaSetSystime(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
 {
@@ -2098,15 +2580,21 @@ int wfaStaPresetParams(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
     dutCmdResponse_t *PresetParamsResp = &gGenericResp;
     caStaPresetParameters_t *presetParams = (caStaPresetParameters_t *)caCmdBuf;
     BYTE presetDone = 1;
+#ifdef _NOT_REQUIRED_
     int st = 0;
-   char cmdStr[128];
-   char string[256];
-   FILE *tmpfd = NULL;
-   long val;
-   char *endptr;
+    char cmdStr[128];
+    FILE *tmpfd = NULL;
+    long val;
+    char *endptr;
+#endif
+    char string[256];
+    FILE *tmpfd1= NULL;
+    char *str;
+    int   mcs_5grate= 0;
 
     DPRINT_INFO(WFA_OUT, "Inside wfaStaPresetParameters function ...\n");
 
+#ifdef _NOT_REQUIRED_
    if (presetParams->supplicant == eWpaSupplicant)
    {
 	st = access("/tmp/processid.txt", F_OK);
@@ -2145,6 +2633,7 @@ int wfaStaPresetParams(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
 
 	    presetDone = 1;
 	}
+        fclose(tmpfd);
    }
 
     if(presetParams->wmmFlag)
@@ -2163,34 +2652,118 @@ int wfaStaPresetParams(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
             break;
         }
     }
+#endif
 
     if(presetParams->modeFlag != 0)
     {
         switch(presetParams->wirelessMode)
         {
+        case eModeA: 
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl he enab 0" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl vhtmode 0" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl nmode 0" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+
+            //wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate -r 54" );
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate auto");
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 2g_rate auto");
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            break;
+        case eModeAN: 
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl he enab 0" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl vhtmode 0" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+
+            //wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate -h 7");
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate auto");
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 2g_rate auto");
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            break;
+        case eModeAC: 
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl he enab 0" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            //wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate -v 7");
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate auto");
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 2g_rate auto");
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            break;
+        case eModeAX: 
+            //file I/O /////////////////////////////
+            tmpfd1 = fopen("/tmp/5grate.txt", "r+");
+            if (tmpfd1 == NULL)
+            {
+                DPRINT_ERR(WFA_ERR, "5grate file not exist\n");
+                return WFA_FAILURE;
+            }
+            
+            fgets(string, 256, tmpfd1);
+            if(strncmp(string, "mcs", 3) ==0)
+            {
+                char ttstr[16];
+                char *ttp = ttstr;
+                str = strtok_r(string, "=", &ttp);
+                str = strtok_r(NULL, "=", &ttp);
+                mcs_5grate = atoi(str);
+                DPRINT_ERR(WFA_OUT, "preset rate : %d\n",mcs_5grate);
+            }
+            fclose(tmpfd1);
+            ////////////////////////////////////////
+
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl he enab 1"    );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            //wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate -e %d",mcs_5grate);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate auto");
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 2g_rate auto");
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            break;
         default:
             printf("other mode does not need to support\n");
-        }
-
-        st = wfaExecuteCLI(gCmdStr);
-        switch(st)
-        {
-        case 0:
-            presetDone = 1;
-            break;
-        case 1:
-            presetDone = 0;
-        case 2:
-            presetDone = 0;
-            break;
         }
     }
 
 
     if(presetParams->psFlag)
     {
+        BYTE ps_mode = presetParams->legacyPowerSave;
+        if (ps_mode == 0)
+        {
+            /* Legacy power save - Off. */
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl PM 0" );
+        }
+        else if (ps_mode == 1)
+        {
+            /* Legacy power save - PSPoll. */
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl PM 1" );
+        }
+        else if ((ps_mode == 2) || (ps_mode == 3 ))
+        {
+            /* Legacy power save - Fast/Non-PSPoll. */
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl PM 2" );
+        }
 
-        printf("%s\n", gCmdStr);
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
         sret = system(gCmdStr);
     }
 
@@ -2223,6 +2796,23 @@ int wfaStaPresetParams(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
         {
             // disable Active Scan on STA
         }
+    }
+    /* 
+     * if any tid is enabled for wme noack, it is enabled for all
+     * else disable for all
+     * enable/disable per tid wl commands not available
+     */
+    if(presetParams->noack_be == 2 || presetParams->noack_bk == 2 || presetParams->noack_vi == 2 || presetParams->noack_vo == 2)
+    {	
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl wme_noack 1");
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        system(gCmdStr);
+    }
+    else
+    {
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl wme_noack 0");
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        system(gCmdStr);
     }
 
     /************the followings are used for Wi-Fi Display *************/
@@ -2389,6 +2979,7 @@ int wfaStaPresetParams(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
       PresetParamsResp->status = STATUS_INVALID;
    }
 
+    PresetParamsResp->status = STATUS_COMPLETE;
     wfaEncodeTLV(WFA_STA_PRESET_PARAMETERS_RESP_TLV, 4, (BYTE *)PresetParamsResp, respBuf);
     *respLen = WFA_TLV_HDR_LEN + 4;
 
@@ -2397,7 +2988,351 @@ int wfaStaPresetParams(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
 
 int wfaStaSet11n(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
 {
-    dutCmdResponse_t *v11nParamsResp = &gGenericResp;
+
+    dutCmdResponse_t infoResp;
+    dutCmdResponse_t *v11nParamsResp = &infoResp;
+
+    caSta11n_t * v11nParams = (caSta11n_t *)caCmdBuf;
+
+    int st =0; // SUCCESS
+    int bring_down_driver;
+    
+    #define IFNAMSIZ 16
+    char ifname[IFNAMSIZ] = "wlan0";
+    
+    DPRINT_INFO(WFA_OUT, "Inside wfaStaSet11n function....\n");
+
+    /* Some commands require us to bring down the driver. */
+    bring_down_driver = 0;
+    if ((v11nParams->width[0]       != '\0') ||
+        (v11nParams->_40_intolerant != 0xff) ||
+        (v11nParams->addba_reject   != 0xff) ||
+        (v11nParams->ampdu          != 0xff) ||
+        (v11nParams->amsdu          != 0xff) ||
+        (v11nParams->greenfield     != 0xff) ||
+        (v11nParams->stbc_rx        != 0xffff))
+    {
+        bring_down_driver = 1;
+    }
+
+    /* Driver needs to be down for the following wl commands. */
+    if (bring_down_driver)
+    {
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl down" );
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        st = wfaExecuteCLI(gCmdStr);
+    }
+
+    if(v11nParams->width[0] != '\0')
+    {
+        // implement the funciton
+        /* 802.11n Channel Width (20/40/auto). */
+        if (!strcmp(v11nParams->width, "20")) {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl mimo_bw_cap 0" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        else if (!strcmp(v11nParams->width, "40")) {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl mimo_bw_cap 1" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        else if (!strcmp(v11nParams->width, "auto")) {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl mimo_bw_cap 2" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        st = wfaExecuteCLI(gCmdStr);
+        if(st != 0)
+        {
+            v11nParamsResp->status = STATUS_ERROR;
+            strcpy(v11nParamsResp->cmdru.info, "set_11n_channel_width failed");
+            wfaEncodeTLV(WFA_STA_SET_11N_RESP_TLV, sizeof(dutCmdResponse_t), (BYTE *)v11nParamsResp, respBuf);
+            *respLen = WFA_TLV_HDR_LEN + sizeof(dutCmdResponse_t);
+            return FALSE;
+        }
+    }
+
+    if(v11nParams->_40_intolerant != 0xFF && v11nParams->_40_intolerant < 2)
+    {
+        // implement the funciton
+        /* 40 Mhz Intolerant. */
+        if (v11nParams->_40_intolerant == 1) {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl obss_coex 1" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            st = wfaExecuteCLI(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl intol40 1" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        else if(v11nParams->_40_intolerant == 0) {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl obss_coex 0" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            st = wfaExecuteCLI(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl intol40 0" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        st = wfaExecuteCLI(gCmdStr);
+        if(st != 0)
+        {
+            v11nParamsResp->status = STATUS_ERROR;
+            strcpy(v11nParamsResp->cmdru.info, "set_40_intolerant failed");
+            wfaEncodeTLV(WFA_STA_SET_11N_RESP_TLV, sizeof(dutCmdResponse_t), (BYTE *)v11nParamsResp, respBuf);
+            *respLen = WFA_TLV_HDR_LEN + sizeof(dutCmdResponse_t);
+            return FALSE;
+        }
+    }
+    
+    if(v11nParams->addba_reject != 0xFF && v11nParams->addba_reject < 2)
+    {
+        // implement the funciton
+        /* Reject any ADDBA request by sending ADDBA response with status "decline". */
+        if (v11nParams->addba_reject == 1) {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl ampdu 0" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        else if(v11nParams->addba_reject == 0) {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl ampdu 1" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        st = wfaExecuteCLI(gCmdStr);
+        if(st != 0)
+        {
+            v11nParamsResp->status = STATUS_ERROR;
+            strcpy(v11nParamsResp->cmdru.info, "set_addba_reject failed");
+            wfaEncodeTLV(WFA_STA_SET_11N_RESP_TLV, sizeof(dutCmdResponse_t), (BYTE *)v11nParamsResp, respBuf);
+            *respLen = WFA_TLV_HDR_LEN + sizeof(dutCmdResponse_t);
+            return FALSE;
+        }
+    }
+
+    if(v11nParams->ampdu != 0xFF && v11nParams->ampdu < 2)
+    {
+        // implement the funciton
+        /* AMPDU Aggregation. */
+        if (v11nParams->ampdu == 1) {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl amsdu 0" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            st = wfaExecuteCLI(gCmdStr);
+            
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl ampdu 1" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        else if(v11nParams->ampdu == 0) {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl ampdu 0" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        st = wfaExecuteCLI(gCmdStr);
+        if(st != 0)
+        {
+            v11nParamsResp->status = STATUS_ERROR;
+            strcpy(v11nParamsResp->cmdru.info, "set_ampdu failed");
+            wfaEncodeTLV(WFA_STA_SET_11N_RESP_TLV, sizeof(dutCmdResponse_t), (BYTE *)v11nParamsResp, respBuf);
+            *respLen = WFA_TLV_HDR_LEN + sizeof(dutCmdResponse_t);
+            return FALSE;
+        }
+    }
+
+    if(v11nParams->amsdu != 0xFF && v11nParams->amsdu < 2)
+    {
+        // implement the funciton
+        /* AMSDU Aggregation. */
+        if (v11nParams->amsdu == 1) {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl amsdu 1" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        else if(v11nParams->amsdu == 0) {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl amsdu 0" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        st = wfaExecuteCLI(gCmdStr);
+        if(st != 0)
+        {
+            v11nParamsResp->status = STATUS_ERROR;
+            strcpy(v11nParamsResp->cmdru.info, "set_amsdu failed");
+            wfaEncodeTLV(WFA_STA_SET_11N_RESP_TLV, sizeof(dutCmdResponse_t), (BYTE *)v11nParamsResp, respBuf);
+            *respLen = WFA_TLV_HDR_LEN + sizeof(dutCmdResponse_t);
+            return FALSE;
+        }
+    }
+
+    if(v11nParams->greenfield != 0xFF && v11nParams->greenfield < 2)
+    {
+        // implement the funciton
+        /* HT Greenfield. */
+        if (v11nParams->greenfield == 1) {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl mimo_preamble 1" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        else if(v11nParams->greenfield == 0) {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl mimo_preamble 0" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        st = wfaExecuteCLI(gCmdStr);
+        if(st != 0)
+        {
+            v11nParamsResp->status = STATUS_ERROR;
+            strcpy(v11nParamsResp->cmdru.info, "_set_greenfield failed");
+            wfaEncodeTLV(WFA_STA_SET_11N_RESP_TLV, sizeof(dutCmdResponse_t), (BYTE *)v11nParamsResp, respBuf);
+            *respLen = WFA_TLV_HDR_LEN + sizeof(dutCmdResponse_t);
+            return FALSE;
+        }
+    }
+
+    if(v11nParams->stbc_rx != 0xFFFF)
+    {
+        // implement the funciton
+        /* STBC Receive Streams. */
+        if (v11nParams->stbc_rx == 0) {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl stbc_tx 0" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            st = wfaExecuteCLI(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl stbc_rx 0" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        else if ((v11nParams->stbc_rx != 0xFFFF) && (v11nParams->stbc_rx > 0)) {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl stbc_tx 1" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            st = wfaExecuteCLI(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl stbc_rx 1" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            st = wfaExecuteCLI(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl nrate -m 5 -w 2" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        st = wfaExecuteCLI(gCmdStr);
+        if(st != 0)
+        {
+            v11nParamsResp->status = STATUS_ERROR;
+            strcpy(v11nParamsResp->cmdru.info, "set_stbc_rx failed");
+            wfaEncodeTLV(WFA_STA_SET_11N_RESP_TLV, sizeof(dutCmdResponse_t), (BYTE *)v11nParamsResp, respBuf);
+            *respLen = WFA_TLV_HDR_LEN + sizeof(dutCmdResponse_t);
+            return FALSE;
+        }
+    }
+
+    /* Bring the driver back up. */
+    if (bring_down_driver)
+    {
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl up" );
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            st = wfaExecuteCLI(gCmdStr);
+    }
+    
+
+    if (v11nParams->mcs_fixedrate[0] != '\0') {
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl nrate -m %d" , v11nParams->mcs_fixedrate);
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        st = wfaExecuteCLI(gCmdStr);
+        if(st != 0)
+        {
+            v11nParamsResp->status = STATUS_ERROR;
+            strcpy(v11nParamsResp->cmdru.info, "set_mcs32/mcs_fixedrate failed");
+            wfaEncodeTLV(WFA_STA_SET_11N_RESP_TLV, sizeof(dutCmdResponse_t), (BYTE *)v11nParamsResp, respBuf);
+            *respLen = WFA_TLV_HDR_LEN + sizeof(dutCmdResponse_t);
+            return FALSE;
+        }
+    }
+
+    if(v11nParams->rifs_test != 0xFF && v11nParams->rifs_test < 2)
+    {
+        // implement the funciton
+        //st = wfaExecuteCLI(gCmdStr);
+        if(st != 0)
+        {
+            v11nParamsResp->status = STATUS_ERROR;
+            strcpy(v11nParamsResp->cmdru.info, "set_rifs_test failed");
+            wfaEncodeTLV(WFA_STA_SET_11N_RESP_TLV, sizeof(dutCmdResponse_t), (BYTE *)v11nParamsResp, respBuf);
+            *respLen = WFA_TLV_HDR_LEN + sizeof(dutCmdResponse_t);
+            return FALSE;
+        }
+    }
+
+    if(v11nParams->sgi20 != 0xFF && v11nParams->sgi20 < 2)
+    {
+        // implement the funciton
+        /* Short Guard Interval. */
+        if (v11nParams->sgi20 == 1) {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl sgi_tx %d" , -1);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            st = wfaExecuteCLI(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl sgi_rx %d" , 3);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        else if(v11nParams->sgi20 == 0) {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl sgi_tx %d" , 0);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            st = wfaExecuteCLI(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl sgi_rx %d" , 0);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        st = wfaExecuteCLI(gCmdStr);
+        if(st != 0)
+        {
+            v11nParamsResp->status = STATUS_ERROR;
+            strcpy(v11nParamsResp->cmdru.info, "set_sgi20 failed");
+            wfaEncodeTLV(WFA_STA_SET_11N_RESP_TLV, sizeof(dutCmdResponse_t), (BYTE *)v11nParamsResp, respBuf);
+            *respLen = WFA_TLV_HDR_LEN + sizeof(dutCmdResponse_t);
+            return FALSE;
+        }
+    }
+    
+    if(v11nParams->smps != 0xFFFF)
+    {
+        /* SM Power Save Mode. */
+        if(v11nParams->smps == 0)
+        {
+            // implement the funciton
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl -i%s mimo_ps 1" , ifname); /* dynamic */
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        else if(v11nParams->smps == 1)
+        {
+            // implement the funciton
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl -i%s mimo_ps 0" , ifname); /* static */
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        else if(v11nParams->smps == 2)
+        {
+            // implement the funciton
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl -i%s mimo_ps 3" , ifname); /* no limit */
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        st = wfaExecuteCLI(gCmdStr);
+        if(st != 0)
+        {
+            v11nParamsResp->status = STATUS_ERROR;
+            strcpy(v11nParamsResp->cmdru.info, "set_smps failed");
+            wfaEncodeTLV(WFA_STA_SET_11N_RESP_TLV, sizeof(dutCmdResponse_t), (BYTE *)v11nParamsResp, respBuf);
+            *respLen = WFA_TLV_HDR_LEN + sizeof(dutCmdResponse_t);
+            return FALSE;
+        }
+    }
+
+    if(v11nParams->txsp_stream != 0 && v11nParams->txsp_stream <4)
+    {
+        // implement the funciton
+        //st = wfaExecuteCLI(gCmdStr);
+        if(st != 0)
+        {
+            v11nParamsResp->status = STATUS_ERROR;
+            strcpy(v11nParamsResp->cmdru.info, "set_txsp_stream failed");
+            wfaEncodeTLV(WFA_STA_SET_11N_RESP_TLV, sizeof(dutCmdResponse_t), (BYTE *)v11nParamsResp, respBuf);
+            *respLen = WFA_TLV_HDR_LEN + sizeof(dutCmdResponse_t);
+            return FALSE;
+        }
+
+    }
+
+    if(v11nParams->rxsp_stream != 0 && v11nParams->rxsp_stream < 4)
+    {
+        // implement the funciton
+        //st = wfaExecuteCLI(gCmdStr);
+        if(st != 0)
+        {
+            v11nParamsResp->status = STATUS_ERROR;
+            strcpy(v11nParamsResp->cmdru.info, "set_rxsp_stream failed");
+            wfaEncodeTLV(WFA_STA_SET_11N_RESP_TLV, sizeof(dutCmdResponse_t), (BYTE *)v11nParamsResp, respBuf);
+            *respLen = WFA_TLV_HDR_LEN + sizeof(dutCmdResponse_t);
+            return FALSE;
+        }
+    }
 
     v11nParamsResp->status = STATUS_COMPLETE;
     wfaEncodeTLV(WFA_STA_SET_11N_RESP_TLV, 4, (BYTE *)v11nParamsResp, respBuf);
@@ -2407,10 +3342,166 @@ int wfaStaSet11n(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
 int wfaStaSetWireless(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
 {
     dutCmdResponse_t *staWirelessResp = &gGenericResp;
+    int bring_down_driver;
+    char string[256];
+    FILE *tmpfd1= NULL;
+    char *str;
+    int   mcs_5grate= 0;
+
+    caStaSetWireless_t *staWirelessParams = (caStaSetWireless_t *)caCmdBuf;
+
+    DPRINT_INFO(WFA_OUT, "Inside wfaStaSetWireless function....\n");
+
+    /* Some commands require us to bring down the driver. */
+    bring_down_driver = 0;
+    if ((staWirelessParams->ampdu_en != 0xff) ||
+        (staWirelessParams->amsdu_en != 0xff) ||
+        (staWirelessParams->bw_cap   != 0xff))
+    {
+        bring_down_driver = 1;
+    }
+
+    /* Driver needs to be down for the following wl commands. */
+    if (bring_down_driver)
+    {
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl down" );
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        system(gCmdStr);
+    }
+    
+    //BW setting
+    if(staWirelessParams->bw_cap != 0xff)
+    {
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl bw_cap 5g %d",staWirelessParams->bw_cap );//fixme
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        system(gCmdStr);
+    }
+
+    //AMPDU  setting
+    if((staWirelessParams->ampdu_en != 0xFF) && (staWirelessParams->ampdu_en<2))
+    {
+        /* AMPDU Aggregation. */
+        if (staWirelessParams->ampdu_en == 1) {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl amsdu 0" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl ampdu 1" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        else if(staWirelessParams->ampdu_en == 0) {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl ampdu 0" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        system(gCmdStr);
+    }
+
+    //AMSDU  setting
+    if(staWirelessParams->amsdu_en != 0xFF && staWirelessParams->amsdu_en < 2)
+    {
+        // implement the funciton
+        /* AMSDU Aggregation. */
+        if (staWirelessParams->amsdu_en == 1) {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl amsdu 1" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        else if(staWirelessParams->amsdu_en == 0) {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl amsdu 0" );
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        }
+        system(gCmdStr);
+    }
+
+    /* Bring the driver back up. */
+    if (bring_down_driver)
+    {
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl up" );
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        system(gCmdStr);
+    }
+
+    if(strcasecmp(staWirelessParams->program, "HE") == 0)
+    {
+        //file I/O /////////////////////////////
+        tmpfd1 = fopen("/tmp/5grate.txt", "r+");
+        if (tmpfd1 == NULL)
+        {
+            DPRINT_ERR(WFA_ERR, "5grate file not exist\n");
+            return WFA_FAILURE;
+        }
+        
+        fgets(string, 256, tmpfd1);
+        if(strncmp(string, "mcs", 3) ==0)
+        {
+            char ttstr[16];
+            char *ttp = ttstr;
+            str = strtok_r(string, "=", &ttp);
+            str = strtok_r(NULL, "=", &ttp);
+            mcs_5grate = atoi(str);
+            DPRINT_INFO(WFA_ERR, "preset rate : %d\n",mcs_5grate);
+        }
+        fclose(tmpfd1);
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate -e %d -l",mcs_5grate);
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        system(gCmdStr);
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 2g_rate -e %d",mcs_5grate);
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        system(gCmdStr);
+        ////////////////////////////////////////
+
+        //TXSP_STREAM setting
+        if(staWirelessParams->txsp_stream != 0 && staWirelessParams->txsp_stream <3)
+        {//[fixme] temporal setting for PF3
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate -e %d -s %d -l",mcs_5grate,staWirelessParams->txsp_stream);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 2g_rate -e %d -s %d",mcs_5grate,staWirelessParams->txsp_stream);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+        }
+
+        //RXSP_STREAM setting
+        if(staWirelessParams->rxsp_stream != 0 && staWirelessParams->rxsp_stream < 3)
+        {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate -e %d -s %d -l",mcs_5grate,staWirelessParams->rxsp_stream);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 2g_rate -e %d -s %d",mcs_5grate,staWirelessParams->rxsp_stream);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+        }
+
+        //bcc/ldpc setting
+        if(staWirelessParams->bcc_en!= 0xFF && staWirelessParams->bcc_en < 2)
+        {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate -e %d",mcs_5grate);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 2g_rate -e %d",mcs_5grate);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+        }
+        else if(staWirelessParams->ldpc_en!= 0xFF && staWirelessParams->ldpc_en < 2)
+        {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate -e %d -l",mcs_5grate);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 2g_rate -e %d",mcs_5grate);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+        }
+
+        DPRINT_INFO(WFA_OUT, "\n********************** Rate_set Results ****************\n");
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate" );
+        system(gCmdStr);
+        DPRINT_INFO(WFA_OUT, "********************************************************\n");
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 2g_rate" );
+        system(gCmdStr);
+        DPRINT_INFO(WFA_OUT, "********************************************************\n");
+    }
 
     staWirelessResp->status = STATUS_COMPLETE;
-    wfaEncodeTLV(WFA_STA_SET_WIRELESS_RESP_TLV, 4, (BYTE *)staWirelessResp, respBuf);
-    *respLen = WFA_TLV_HDR_LEN + 4;
+    wfaEncodeTLV(WFA_STA_SET_WIRELESS_RESP_TLV, sizeof(dutCmdResponse_t), (BYTE *)staWirelessResp, respBuf);
+    *respLen = WFA_TLV_HDR_LEN + sizeof(dutCmdResponse_t);
     return WFA_SUCCESS;
 }
 
@@ -2418,6 +3509,7 @@ int wfaStaSendADDBA(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
 {
     dutCmdResponse_t *staSendADDBAResp = &gGenericResp;
 
+    staSendADDBAResp->status = STATUS_COMPLETE;
     wfaEncodeTLV(WFA_STA_SET_SEND_ADDBA_RESP_TLV, 4, (BYTE *)staSendADDBAResp, respBuf);
     *respLen = WFA_TLV_HDR_LEN + 4;
     return WFA_SUCCESS;
@@ -2448,11 +3540,100 @@ int wfaStaResetDefault(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
 {
     caStaResetDefault_t *reset = (caStaResetDefault_t *)caCmdBuf;
     dutCmdResponse_t *ResetResp = &gGenericResp;
+    char string[256];
+    FILE *tmpfd1= NULL;
+    char *str;
+    int   mcs_5grate= 0;
 
+    printf("\nEntered wfaStaResetDefault ...\n");
 
-    // need to make your own command available for this, here is only an example
-    sprintf(gCmdStr, "myresetdefault %s program %s", reset->intf, reset->prog);
-    sret = system(gCmdStr);
+    if(strcmp(reset->prog,"HE") == 0)
+    {
+	if(strcmp(reset->type, "testbed") == 0)
+	{	
+	    /*
+	     * Going to reset as a testbed device
+	     */
+	    
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl down" );
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        system(gCmdStr);
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl amsdu 0" );
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        system(gCmdStr);
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl stbc_tx 0" );
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        system(gCmdStr);
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl stbc_rx 0" );
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        system(gCmdStr);
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl up" );
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        system(gCmdStr);
+
+        DPRINT_INFO(WFA_OUT, "\n********************** Rate_set Results ****************\n");
+        DPRINT_INFO(WFA_OUT, "amsdu:\n");
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl amsdu" );
+        system(gCmdStr);
+        DPRINT_INFO(WFA_OUT, "********************************************************\n");
+        DPRINT_INFO(WFA_OUT, "stbc_tx:\n");
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl stbc_tx" );
+        system(gCmdStr);
+        DPRINT_INFO(WFA_OUT, "********************************************************\n");
+        DPRINT_INFO(WFA_OUT, "stbc_rx:\n");
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl stbc_rx" );
+        system(gCmdStr);
+        DPRINT_INFO(WFA_OUT, "********************************************************\n");
+	}
+	else 
+	{
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl he 1" );
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        system(gCmdStr);
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl he enab 1" );
+        DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+        system(gCmdStr);
+        sprintf(gCmdStr, "/usr/local/sbin/get5grate.sh /tmp/5grate.txt\n");
+        system(gCmdStr);
+        DPRINT_INFO(WFA_OUT, "default DUT fixedrate setting=================================\n");
+        DPRINT_INFO(WFA_OUT, "=Fixed rate is required to set any nss/LTF.. with 5g_rate/2g_rate=====\n");
+        DPRINT_INFO(WFA_OUT, "==============================================================\n");
+        //file I/O /////////////////////////////
+        tmpfd1 = fopen("/tmp/5grate.txt", "r+");
+        if (tmpfd1 == NULL)
+        {
+            DPRINT_ERR(WFA_ERR, "5grate file not exist\n");
+            return WFA_FAILURE;
+        }
+        
+        fgets(string, 256, tmpfd1);
+        if(strncmp(string, "mcs", 3) ==0)
+        {
+            char ttstr[16];
+            char *ttp = ttstr;
+            str = strtok_r(string, "=", &ttp);
+            str = strtok_r(NULL, "=", &ttp);
+            mcs_5grate = atoi(str);
+            DPRINT_INFO(WFA_ERR, "preset rate : %d\n",mcs_5grate);
+            //wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate -e %d",mcs_5grate);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate auto");
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 2g_rate auto");
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+        }
+        fclose(tmpfd1);
+        ////////////////////////////////////////
+        DPRINT_INFO(WFA_OUT, "\n********************** Rate_set Results ****************\n");
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate" );
+        system(gCmdStr);
+        DPRINT_INFO(WFA_OUT, "********************************************************\n");
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 2g_rate" );
+        system(gCmdStr);
+        DPRINT_INFO(WFA_OUT, "********************************************************\n");
+	}
+    }
 
     ResetResp->status = STATUS_COMPLETE;
     wfaEncodeTLV(WFA_STA_RESET_DEFAULT_RESP_TLV, 4, (BYTE *)ResetResp, respBuf);
@@ -2733,11 +3914,16 @@ int wfaStaSetMacAddr(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
 
 int wfaStaDisconnect(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
 {
-    //dutCommand_t *disc = (dutCommand_t *)caCmdBuf;
-    //char *intf = disc->intf;
+    dutCommand_t *disc = (dutCommand_t *)caCmdBuf;
+    char *intf = disc->intf;
     dutCmdResponse_t *staDiscResp = &gGenericResp;
 
+    DPRINT_INFO(WFA_OUT, "Entering %s ...\n", __FUNCTION__);
+
     // stop the supplicant
+    sprintf(gCmdStr, "wpa_cli -i %s disconnect", intf);
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+    system(gCmdStr);
 
     staDiscResp->status = STATUS_COMPLETE;
 
@@ -2826,10 +4012,10 @@ void wfaSendPing(tgPingStart_t *staPing, float *interval, int streamid)
     if (staPing->iptype == 2)
     {
         if ( tos>0)
-            sprintf(cmdStr, "echo streamid=%i > /tmp/spout_%d.txt;wfaping6.sh %s %s -i %f -c %i -Q %d -s %i -q >> /tmp/spout_%d.txt 2>/dev/null",
+            sprintf(cmdStr, "echo streamid=%i > /tmp/spout_%d.txt;/usr/local/sbin/wfaping6.sh %s %s -i %f -c %i -Q %d -s %i -q >> /tmp/spout_%d.txt 2>/dev/null",
                     streamid,streamid,bflag, staPing->dipaddr, *interval, totalpkts, tos,  staPing->frameSize,streamid);
         else
-            sprintf(cmdStr, "echo streamid=%i > /tmp/spout_%d.txt;wfaping6.sh %s %s -i %f -c %i -s %i -q >> /tmp/spout_%d.txt 2>/dev/null",
+            sprintf(cmdStr, "echo streamid=%i > /tmp/spout_%d.txt;/usr/local/sbin/wfaping6.sh %s %s -i %f -c %i -s %i -q >> /tmp/spout_%d.txt 2>/dev/null",
                     streamid,streamid,bflag, staPing->dipaddr, *interval, totalpkts, staPing->frameSize,streamid);
         sret = system(cmdStr);
         printf("\nCS : The command string is %s",cmdStr);
@@ -2837,15 +4023,15 @@ void wfaSendPing(tgPingStart_t *staPing, float *interval, int streamid)
     else
     {
         if (tos > 0)
-            sprintf(cmdStr, "echo streamid=%i > /tmp/spout_%d.txt;wfaping.sh %s %s -i %f -c %i  -Q %d -s %i -q >> /tmp/spout_%d.txt 2>/dev/null",
+            sprintf(cmdStr, "echo streamid=%i > /tmp/spout_%d.txt;/usr/local/sbin/wfaping.sh %s %s -i %f -c %i  -Q %d -s %i -q >> /tmp/spout_%d.txt 2>/dev/null",
                     streamid,streamid,bflag, staPing->dipaddr, *interval, totalpkts, tos, staPing->frameSize,streamid);
         else
-            sprintf(cmdStr, "echo streamid=%i > /tmp/spout_%d.txt;wfaping.sh %s %s -i %f -c %i -s %i -q >> /tmp/spout_%d.txt 2>/dev/null",
+            sprintf(cmdStr, "echo streamid=%i > /tmp/spout_%d.txt;/usr/local/sbin/wfaping.sh %s %s -i %f -c %i -s %i -q >> /tmp/spout_%d.txt 2>/dev/null",
                     streamid,streamid,bflag, staPing->dipaddr, *interval, totalpkts, staPing->frameSize,streamid);
         sret = system(cmdStr);
         printf("\nCS : The command string is %s",cmdStr);
     }
-    sprintf(cmdStr, "updatepid.sh /tmp/spout_%d.txt",streamid);
+    sprintf(cmdStr, "/usr/local/sbin/updatepid.sh /tmp/spout_%d.txt",streamid);
     sret = system(cmdStr);
     printf("\nCS : The command string is %s",cmdStr);
 
@@ -2857,14 +4043,14 @@ int wfaStopPing(dutCmdResponse_t *stpResp, int streamid)
     FILE *tmpfile = NULL;
     char cmdStr[128];
     printf("\nwfa_cs.c wfaStopPing:: stream id=%d\n", streamid);
-    sprintf(cmdStr, "getpid.sh /tmp/spout_%d.txt /tmp/pid.txt",streamid);
+    sprintf(cmdStr, "/usr/local/sbin/getpid.sh /tmp/spout_%d.txt /tmp/pid.txt",streamid);
     sret = system(cmdStr);
 
     printf("\nCS : The command string is %s",cmdStr);
 
-    sret = system("stoping.sh /tmp/pid.txt ; sleep 2");
+    sret = system("/usr/local/sbin/stoping.sh /tmp/pid.txt ; sleep 2");
 
-    sprintf(cmdStr, "getpstats.sh /tmp/spout_%d.txt",streamid);
+    sprintf(cmdStr, "/usr/local/sbin/getpstats.sh /tmp/spout_%d.txt",streamid);
     sret = system(cmdStr);
 
     printf("\nCS : The command string is %s",cmdStr);
@@ -3658,11 +4844,115 @@ int wfaStaSetRFeature(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
     dutCommand_t *dutCmd = (dutCommand_t *)caCmdBuf;
     caStaRFeat_t *rfeat = &dutCmd->cmdsu.rfeat;
     dutCmdResponse_t *caResp = &gGenericResp;
+    char string[256];
+    FILE *tmpfd1= NULL;
+    char *str;
+    int   mcs_5grate= 0;
+
+    printf("\nEntered wfaStaSetRFeature...\n");
 
     if(strcasecmp(rfeat->prog, "tdls") == 0)
     {
 
+    }
 
+    if(strcasecmp(rfeat->prog, "HE") == 0)
+    {
+        //file I/O /////////////////////////////
+        tmpfd1 = fopen("/tmp/5grate.txt", "r+");
+        if (tmpfd1 == NULL)
+        {
+            DPRINT_ERR(WFA_ERR, "5grate file not exist\n");
+            return WFA_FAILURE;
+        }
+        
+        fgets(string, 256, tmpfd1);
+        if(strncmp(string, "mcs", 3) ==0)
+        {
+            char ttstr[16];
+            char *ttp = ttstr;
+            str = strtok_r(string, "=", &ttp);
+            str = strtok_r(NULL, "=", &ttp);
+            mcs_5grate = atoi(str);
+            DPRINT_INFO(WFA_ERR, "preset rate : %d\n",mcs_5grate);
+        }
+        fclose(tmpfd1);
+        ////////////////////////////////////////
+        //set MCS
+        if((rfeat->mcs>=0) && (rfeat->mcs<=11)) 
+        {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate -e %d -l" , rfeat->mcs);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 2g_rate -e %d" , rfeat->mcs);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+
+            //compare preset rate value, and update if different
+            if(rfeat->mcs != mcs_5grate)
+            {
+                sprintf(gCmdStr, "/usr/local/sbin/get5grate.sh /tmp/5grate.txt \n");
+                system(gCmdStr);
+                mcs_5grate = rfeat->mcs;
+            }
+        }
+
+        //set NSS
+        if((rfeat->nss>0) && (rfeat->nss < 3)) 
+        {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate -e %d -s %d -l" ,mcs_5grate, rfeat->nss);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 2g_rate -e %d -s %d" ,mcs_5grate, rfeat->nss);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+        }
+
+        //set LTF & GI
+        if(     (strcasecmp(rfeat->ltf, "3.2" ) == 0) && (strcasecmp(rfeat->gi, "0.8") == 0))
+        {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate -e %d -i 0 -l" , mcs_5grate);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 2g_rate -e %d -i 0" , mcs_5grate);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+        }
+        else if((strcasecmp(rfeat->ltf, "6.4" ) == 0) && (strcasecmp(rfeat->gi, "0.8") == 0))
+        {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate -e %d -i 1 -l" , mcs_5grate);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 2g_rate -e %d -i 1" , mcs_5grate);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+        }
+        else if((strcasecmp(rfeat->ltf, "6.4" ) == 0) && (strcasecmp(rfeat->gi, "1.6") == 0))
+        {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate -e %d -i 2 -l" , mcs_5grate);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 2g_rate -e %d -i 2" , mcs_5grate);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+        }
+        else if((strcasecmp(rfeat->ltf, "12.8") == 0) && (strcasecmp(rfeat->gi, "3.2") == 0))
+        {
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate -e %d -i 3 -l" , mcs_5grate);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+            wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 2g_rate -e %d -i 3" , mcs_5grate);
+            DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+            system(gCmdStr);
+        }
+
+        DPRINT_INFO(WFA_OUT, "\n**************** rfeature set results ******************\n");
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 5g_rate" );
+        system(gCmdStr);
+        DPRINT_INFO(WFA_OUT, "********************************************************\n");
+        wfa_snprintf(gCmdStr, sizeof(gCmdStr), "wl 2g_rate" );
+        system(gCmdStr);
+        DPRINT_INFO(WFA_OUT, "********************************************************\n");
     }
 
     caResp->status = STATUS_COMPLETE;
@@ -3680,7 +4970,7 @@ int wfaStaStartWfdConnection(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBu
     dutCmdResponse_t infoResp;
     //caStaStartWfdConn_t *staStartWfdConn= (caStaStartWfdConn_t *)caCmdBuf; //uncomment and use it
 
-    printf("\n Entry wfaStaStartWfdConnection... ");
+    DPRINT_INFO(WFA_OUT, "Entered wfaStaStartWfdConnection...\n");
 
 
     // Fetch the GrpId and WFD session and return
@@ -4244,6 +5534,32 @@ int wfaStaGetEventDetails(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
    return WFA_SUCCESS;
 }
 
-	
+int wfaStaScan(int len, BYTE *caCmdBuf, int *respLen, BYTE *respBuf)
+{
+    dutCmdResponse_t *staScanResp = &gGenericResp;
+
+    DPRINT_INFO(WFA_OUT, "Entering %s ...\n", __FUNCTION__);
+
+    // stop the supplicant
+    sprintf(gCmdStr, "wl scan");
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+    system(gCmdStr);
+
+    usleep(3000000);
+    DPRINT_INFO(WFA_OUT, "\n********** Scan Results *(HE**) **\n");
+    sprintf(gCmdStr, "wl scanresults | grep HE");
+    DPRINT_INFO(WFA_OUT, "%s\n", gCmdStr);
+    system(gCmdStr);
+    DPRINT_INFO(WFA_OUT, "***********************************\n");
+
+    staScanResp->status = STATUS_COMPLETE;
+
+    wfaEncodeTLV(WFA_STA_SCAN_RESP_TLV, 4, (BYTE *)staScanResp, respBuf);
+    *respLen = WFA_TLV_HDR_LEN + 4;
+
+    return WFA_SUCCESS;
+}
+
+    
 
 

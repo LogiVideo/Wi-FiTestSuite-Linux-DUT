@@ -96,7 +96,7 @@ int getParamValueInt(char *pcmdStr, char *pParam, int *paramValue)
     if(strcasecmp(pcmdStr, pParam) == 0)
     {
         str = strtok_r(NULL, ",", &pcmdStr);
-        paramValue = atoi(str);
+        *paramValue = atoi(str);
         return 0;
     }
     return -1;
@@ -1075,7 +1075,7 @@ int xcCmdProcStaVerifyIpConnection(char *pcmdStr, BYTE *aBuf, int *aLen)
             str = strtok_r(NULL, ",", &pcmdStr);
             strcpy(verifyip->intf, str);
             verifyip->intf[15]='\0';
-            DPRINT_INFO(WFA_OUT, "interface %s %i\n", verifyip->intf, strlen(verifyip->intf));
+            DPRINT_INFO(WFA_OUT, "interface %s %d\n", verifyip->intf, (int)strlen(verifyip->intf));
         }
         else if(strcasecmp(str, "destination") == 0)
         {
@@ -1087,7 +1087,7 @@ int xcCmdProcStaVerifyIpConnection(char *pcmdStr, BYTE *aBuf, int *aLen)
         {
             str = strtok_r(NULL, ",", &pcmdStr);
             verifyip->cmdsu.verifyIp.timeout = atoi(str);
-            DPRINT_INFO(WFA_OUT, "timeout %i\n", verifyip->cmdsu.verifyIp.timeout);
+            DPRINT_INFO(WFA_OUT, "timeout %d\n", verifyip->cmdsu.verifyIp.timeout);
         }
     }
 
@@ -1241,16 +1241,18 @@ int xcCmdProcStaSetSecurity(char *pcmdStr, BYTE *aBuf, int *aLen)
     int ret = WFA_SUCCESS;
 
 #ifndef WFA_PC_CONSOLE
-    dutCommand_t *cmd = (dutCommand_t *) (aBuf+sizeof(wfaTLV));
-    caStaSetSecurity_t *ssec = &cmd->cmdsu.setsec;
     char *str;
-    int secType = 0;
+    dutCommand_t *cmd = (dutCommand_t *) (aBuf+sizeof(wfaTLV));
+    caStaSetSecurityCommon_t *sseccom; 
+    caStaSetSecurity_t *setsec = &cmd->cmdsu.setsec;
+    //caStaSetSecurity_t       *setsec ; 
 
     if(aBuf == NULL)
         return WFA_FAILURE;
 
     memset(aBuf, 0, *aLen);
-
+    sseccom = malloc(sizeof(caStaSetSecurityCommon_t));
+    //memset((void *)sseccom, 0, sizeof(caStaSetSecurityCommon_t));
     for(;;)
     {
         str = strtok_r(NULL, ",", &pcmdStr);
@@ -1260,75 +1262,243 @@ int xcCmdProcStaSetSecurity(char *pcmdStr, BYTE *aBuf, int *aLen)
         if(strcasecmp(str, "interface") == 0)
         {
             str = strtok_r(NULL, ",", &pcmdStr);
-            strncpy(cmd->intf, str, 15);
+            strncpy(cmd->intf    , str, 16);
+            strncpy(sseccom->intf, str, 16);
+        }
+        else if(strcasecmp(str, "type") == 0)
+        { // process the specific type of security 
+            str = strtok_r (NULL, ",", &pcmdStr);
+            if(     strcasecmp(str, "open"       ) == 0) sseccom->type = SEC_TYPE_OPEN;
+            else if(strcasecmp(str, "psk"        ) == 0) sseccom->type = SEC_TYPE_PSK;
+            else if(strcasecmp(str, "eaptls"     ) == 0) sseccom->type = SEC_TYPE_EAPTLS;
+            else if(strcasecmp(str, "eapttls"    ) == 0) sseccom->type = SEC_TYPE_EAPTTLS;
+            else if(strcasecmp(str, "eappeap"    ) == 0) sseccom->type = SEC_TYPE_EAPPEAP;
+            else if(strcasecmp(str, "eapsim"     ) == 0) sseccom->type = SEC_TYPE_EAPSIM;
+            else if(strcasecmp(str, "eapfast"    ) == 0) sseccom->type = SEC_TYPE_EAPFAST;
+            else if(strcasecmp(str, "eapaka"     ) == 0) sseccom->type = SEC_TYPE_EAPAKA;
+            else if(strcasecmp(str, "eapakaprime") == 0) sseccom->type = SEC_TYPE_EAPAKAPRIME;
         }
         else if(strcasecmp(str, "ssid") == 0)
         {
             str = strtok_r(NULL, ",", &pcmdStr);
-            strncpy(ssec->ssid, str, 64);
-            DPRINT_INFO(WFA_OUT, "ssid %s\n", ssec->ssid);
+            strncpy(sseccom->ssid, str, 64);
+            DPRINT_INFO(WFA_OUT, "ssid %s\n", sseccom->ssid);
+        }
+        else if(strcasecmp(str, "keyMgmtType") == 0)
+        {
+            str=strtok_r(NULL, ",", &pcmdStr);
+            strncpy(sseccom->keyMgmtType, str, 8);
+            DPRINT_INFO(WFA_OUT, "keymgmt type:%s\n", sseccom->keyMgmtType);
         }
         else if(strcasecmp(str, "encpType") == 0)
         {
             str = strtok_r(NULL, ",", &pcmdStr);
 
-            if(strcasecmp(str, "tkip") == 0 || strcasecmp(str, "aes-ccmp") == 0)
-                strncpy(ssec->encpType, str, 9);
+            if(     strcasecmp(str, "wep"           ) == 0) sseccom->encpType = ENCRYPT_WEP;
+            else if(strcasecmp(str, "tkip"          ) == 0) sseccom->encpType = ENCRYPT_TKIP;
+            else if(strcasecmp(str, "aes-ccmp"      ) == 0) sseccom->encpType = ENCRYPT_AESCCMP;
+            else if (strcasecmp(str, "aes-ccmp-tkip") == 0) sseccom->encpType = ENCRYPT_AESCCMP_TKIP;
+            else sseccom->encpType = ENCRYPT_NONE;
+            strncpy(sseccom->encrptype, str, 16);
         }
         else if(strcasecmp(str, "pmf") == 0)
         {
             str = strtok_r (NULL, ",", &pcmdStr);
 
-            if( strcasecmp(str, "optional") == 0)
-                ssec->pmf = WFA_OPTIONAL;
-            else if(strcasecmp(str, "required") == 0)
-                ssec->pmf = WFA_REQUIRED;
-            else
-                ssec->pmf = WFA_DISABLED;
+            if(     strcasecmp(str, "optional"       ) == 0) sseccom->pmf = WFA_OPTIONAL;
+            else if(strcasecmp(str, "enable"         ) == 0) sseccom->pmf = WFA_ENABLED;
+            else if(strcasecmp(str, "required"       ) == 0) sseccom->pmf = WFA_REQUIRED;
+            else if(strcasecmp(str, "forced_required") == 0) sseccom->pmf = WFA_F_REQUIRED;
+            else if(strcasecmp(str, "forced_disabled") == 0) sseccom->pmf = WFA_F_DISABLED;
+            else sseccom->pmf = WFA_DISABLED;
         }
-
-        else if(strcasecmp(str, "type") == 0)
+        else if((strcasecmp(str, "passphrase") == 0) ||
+                (strcasecmp(str, "password"  ) == 0))
         {
-            /* process the specific type of security */
-            str = strtok_r (NULL, ",", &pcmdStr);
-            if(strcasecmp(str, "psk") == 0)
-            {
-                ssec->type = secType = SEC_TYPE_PSK;
-
-                str = strtok_r(NULL, ",", &pcmdStr);
-                if(strcasecmp(str, "passphrase") == 0)
-                {
-                    str = strtok_r(NULL, ",", &pcmdStr);
-                    strncpy(ssec->secu.passphrase, str, 64);
-                }
-            }
-            else if(strcasecmp(str, "eaptls") == 0)
-            {
-                ssec->type = secType = SEC_TYPE_EAPTLS;
-            }
-            else if(strcasecmp(str, "eapttls") == 0)
-            {
-                ssec->type = secType = SEC_TYPE_EAPTTLS;
-            }
-            else if(strcasecmp(str, "eappeap") == 0)
-            {
-                ssec->type = secType = SEC_TYPE_EAPPEAP;
-            }
-            else if(strcasecmp(str, "eapsim") == 0)
-            {
-                ssec->type = secType = SEC_TYPE_EAPSIM;
-            }
-            else if(strcasecmp(str, "eapfast") == 0)
-            {
-                ssec->type = secType = SEC_TYPE_EAPFAST;
-            }
-            else if(strcasecmp(str, "eapaka") == 0)
-            {
-                ssec->type = secType = SEC_TYPE_EAPAKA;
-            }
+            str = strtok_r(NULL, ",", &pcmdStr);
+            strncpy(sseccom->passwd, str, 96);
+        }
+        else if (strcasecmp(str, "micAlg") == 0)
+        {
+            str = strtok_r(NULL, ",", &pcmdStr);
+            if (strcasecmp(str, "SHA-1") != 0) strncpy(sseccom->micAlg, str, 16);
+            else strncpy(sseccom->micAlg, "SHA-1", 16);
+        }
+        else if (strcasecmp(str, "Prog") == 0)
+        {
+            str = strtok_r(NULL, ",", &pcmdStr);
+            strncpy(sseccom->prog, str, 16);
+        }
+        else if (strcasecmp(str, "Prefer") == 0)
+        {
+            str = strtok_r(NULL, ",", &pcmdStr);
+            sseccom->prefer = (atoi(str) == 1)?1:0;
+        }
+        else if(strcasecmp(str, "username") == 0)
+        {
+            str = strtok_r(NULL, ",", &pcmdStr);
+            strcpy(sseccom->username, str);
+        }
+        else if(strcasecmp(str, "trustedRootCA") == 0)
+        {
+            str = strtok_r(NULL, ",", &pcmdStr);
+            strcpy(sseccom->trustedRootCA, str);
+        }
+        else if(strcasecmp(str, "clientCertificate") == 0)
+        {
+            str = strtok_r(NULL, ",", &pcmdStr);
+            strcpy(sseccom->clientCertificate, str);
+        }
+        else if(strcasecmp(str, "innerEAP") == 0)
+        {
+            str = strtok_r(NULL, ",", &pcmdStr);
+            strcpy(sseccom->innerEAP, str);
+        }
+        else if(strcasecmp(str, "peapVersion") == 0)
+        {
+            str = strtok_r(NULL, ",", &pcmdStr);
+            sseccom->peapVersion = atoi(str);
+        }
+        else if(strcasecmp(str, "triplet1") == 0)
+        {
+            str = strtok_r(NULL, ",", &pcmdStr);
+            strncpy(sseccom->tripletSet[0], str, 96);
+            DPRINT_INFO(WFA_OUT, "Triplet1 : %s\n", sseccom->tripletSet[0]);
+            sseccom->tripletCount = 1;
+        }
+        else if(strcasecmp(str, "triplet2") == 0)
+        {
+            str = strtok_r(NULL, ",", &pcmdStr);
+            strncpy(sseccom->tripletSet[1], str, 96);
+            DPRINT_INFO(WFA_OUT, "Triplet2 : %s\n", sseccom->tripletSet[1]);
+            sseccom->tripletCount=2;
+        }
+        else if(strcasecmp(str, "triplet3") == 0)
+        {
+            str = strtok_r(NULL, ",", &pcmdStr);
+            strncpy(sseccom->tripletSet[2], str, 96);
+            DPRINT_INFO(WFA_OUT, "Triplet1 : %s\n", sseccom->tripletSet[2]);
+            sseccom->tripletCount = 3;
+        }
+        else if(strcasecmp(str, "validateServer") == 0)
+        {
+            str = strtok_r(NULL, ",", &pcmdStr);
+            if     (strcasecmp(str, "yes") == 0) sseccom->validateServer=1;
+            else if(strcasecmp(str, "no" ) == 0) sseccom->validateServer=0;
+        }
+        else if(strcasecmp(str, "pacFile") == 0)
+        {
+            str = strtok_r(NULL, ",", &pcmdStr);
+            strcpy(sseccom->pacFileName, str);
         }
     }
+    //Per ENC_TYPE setting(Set "cmd->cmdsu.setsec"
+    setsec->type = sseccom->type;
+    switch(sseccom->type)
+    {
+        case SEC_TYPE_OPEN :
+            strncpy(setsec->secu.sencryp.intf   , sseccom->intf, WFA_IF_NAME_LEN);
+            strncpy(setsec->secu.sencryp.ssid   , sseccom->ssid, WFA_SSID_NAME_LEN);
+            setsec->secu.sencryp.encpType = 0;//encType:NONE
+            break;
+        case SEC_TYPE_PSK ://set ca
+            strncpy(setsec->secu.psk.intf                , sseccom->intf, 15);
+            strncpy(setsec->secu.psk.ssid                , sseccom->ssid, 64);
+            strncpy((char *)setsec->secu.psk.passphrase  , sseccom->passwd, 63);
+            strncpy(setsec->secu.psk.keyMgmtType         , sseccom->keyMgmtType, 15);
+            strncpy(setsec->secu.psk.micAlg              , sseccom->micAlg, 15);
+            strncpy(setsec->secu.psk.prog                , sseccom->prog  , 15);
+            setsec->secu.psk.encpType = sseccom->encpType;
+            setsec->secu.psk.pmf      = sseccom->pmf; 
+            setsec->secu.psk.prefer   = sseccom->prefer; 
+            break;
+        case SEC_TYPE_EAPTLS ://set caStaSetEapTLS_t tls;
+            strncpy(setsec->secu.tls.intf             , sseccom->intf, 15);
+            strncpy(setsec->secu.tls.ssid             , sseccom->ssid, 64);
+            strcpy (setsec->secu.tls.username         , sseccom->username);
+            strncpy(setsec->secu.tls.keyMgmtType      , sseccom->keyMgmtType, 8);
+            strncpy(setsec->secu.tls.encrptype        , sseccom->encrptype,9);
+            strcpy (setsec->secu.tls.clientCertificate, sseccom->clientCertificate);
+            strcpy (setsec->secu.tls.trustedRootCA    , sseccom->trustedRootCA);
+            strncpy(setsec->secu.tls.micAlg           , sseccom->micAlg, 15);
+            setsec->secu.tls.pmf      = sseccom->pmf; 
+            break;
+        case SEC_TYPE_EAPTTLS://set caStaSetEapTTLS_t ttls;
+            strncpy(setsec->secu.ttls.intf             , sseccom->intf, 15);
+            strncpy(setsec->secu.ttls.ssid             , sseccom->ssid, 64);
+            strcpy (setsec->secu.ttls.username         , sseccom->username);
+            strcpy (setsec->secu.ttls.passwd           , sseccom->passwd  );
+            strncpy(setsec->secu.ttls.keyMgmtType      , sseccom->keyMgmtType, 7);
+            strncpy(setsec->secu.ttls.encrptype        , sseccom->encrptype,9);
+            strcpy (setsec->secu.ttls.clientCertificate, sseccom->clientCertificate);
+            strcpy (setsec->secu.ttls.trustedRootCA    , sseccom->trustedRootCA);
+            strncpy(setsec->secu.ttls.micAlg           , sseccom->micAlg, 15);
+            strncpy(setsec->secu.ttls.prog             , sseccom->prog  , 15);
+            setsec->secu.ttls.pmf      = sseccom->pmf; 
+            setsec->secu.ttls.prefer   = sseccom->prefer;
+            break;
+        case SEC_TYPE_EAPPEAP://set caStaSetEapPEAP_t peap;
+            strncpy(setsec->secu.peap.intf         , sseccom->intf, 15);
+            strncpy(setsec->secu.peap.ssid         , sseccom->ssid, 64);
+            strcpy (setsec->secu.peap.username     , sseccom->username);
+            strcpy (setsec->secu.peap.passwd       , sseccom->passwd);
+            strncpy(setsec->secu.peap.keyMgmtType  , sseccom->keyMgmtType, 7);
+            strncpy(setsec->secu.peap.encrptype    , sseccom->encrptype,9);
+            strncpy(setsec->secu.peap.trustedRootCA, sseccom->trustedRootCA,31);
+            strcpy (setsec->secu.peap.innerEAP     , sseccom->innerEAP);
+            setsec->secu.peap.peapVersion = sseccom->peapVersion;
+            setsec->secu.peap.pmf         = sseccom->pmf; 
+            break;
+        case SEC_TYPE_EAPSIM ://set caStaSetEapSIM_t sim;
+            strncpy(setsec->secu.sim.intf         , sseccom->intf, 15);
+            strncpy(setsec->secu.sim.ssid         , sseccom->ssid, 64);
+            strcpy (setsec->secu.sim.username     , sseccom->username);
+            strcpy (setsec->secu.sim.passwd       , sseccom->passwd);
+            strncpy(setsec->secu.sim.keyMgmtType  , sseccom->keyMgmtType, 7);
+            strncpy(setsec->secu.sim.encrptype    , sseccom->encrptype,9);
+            strncpy(setsec->secu.sim.tripletSet[0], sseccom->tripletSet[0], 63);
+            strncpy(setsec->secu.sim.tripletSet[1], sseccom->tripletSet[1], 63);
+            strncpy(setsec->secu.sim.tripletSet[2], sseccom->tripletSet[2], 63);
+            setsec->secu.sim.pmf      = sseccom->pmf; 
+            break;
+        case SEC_TYPE_EAPFAST://set caStaSetEapFAST_t fast;
+            strncpy(setsec->secu.fast.intf         , sseccom->intf, 15);
+            strncpy(setsec->secu.fast.ssid         , sseccom->ssid, 64);
+            strcpy (setsec->secu.fast.username     , sseccom->username);
+            strcpy (setsec->secu.fast.passwd       , sseccom->passwd);
+            strncpy(setsec->secu.fast.keyMgmtType  , sseccom->keyMgmtType, 7);
+            strncpy(setsec->secu.fast.encrptype    , sseccom->encrptype,9);
+            strncpy(setsec->secu.fast.trustedRootCA, sseccom->trustedRootCA,31);
+            strcpy (setsec->secu.fast.innerEAP     , sseccom->innerEAP);
+            strcpy (setsec->secu.fast.pacFileName  , sseccom->pacFileName);
+            setsec->secu.fast.validateServer = sseccom->validateServer;
+            setsec->secu.fast.pmf            = sseccom->pmf; 
+            break;
+        case SEC_TYPE_EAPAKA ://set caStaSetEapAKA_t aka;
+            strncpy(setsec->secu.aka.intf         , sseccom->intf, 15);
+            strncpy(setsec->secu.aka.ssid         , sseccom->ssid, 64);
+            strcpy (setsec->secu.aka.username     , sseccom->username);
+            strcpy (setsec->secu.aka.passwd       , sseccom->passwd);
+            strncpy(setsec->secu.aka.keyMgmtType  , sseccom->keyMgmtType, 7);
+            strncpy(setsec->secu.aka.encrptype    , sseccom->encrptype,9);
+            strncpy(setsec->secu.aka.tripletSet[0], sseccom->tripletSet[0], 63);
+            strncpy(setsec->secu.aka.tripletSet[1], sseccom->tripletSet[1], 63);
+            strncpy(setsec->secu.aka.tripletSet[2], sseccom->tripletSet[2], 63);
+            setsec->secu.aka.pmf      = sseccom->pmf; 
+            break;
+        case SEC_TYPE_EAPAKAPRIME://set caStaSetEapAKAPrime_t akaprime;
+            strncpy(setsec->secu.akaprime.intf       , sseccom->intf, 15);
+            strncpy(setsec->secu.akaprime.ssid       , sseccom->ssid, 64);
+            strcpy (setsec->secu.akaprime.username   , sseccom->username);
+            strcpy (setsec->secu.akaprime.passwd     , sseccom->passwd);
+            strncpy(setsec->secu.akaprime.keyMgmtType, sseccom->keyMgmtType, 7);
+            strncpy(setsec->secu.akaprime.encrptype  , sseccom->encrptype,9);
+            break;
+        default : ret = WFA_FAILURE;  // command invalid 
+    }
 #endif
+    wfaEncodeTLV(WFA_STA_SET_SECURITY_TLV, sizeof(caStaSetSecurity_t), (BYTE *)setsec, aBuf);
+    *aLen = 4+sizeof(caStaSetSecurity_t);
     return ret;
 }
 
@@ -3855,6 +4025,66 @@ int xcCmdProcStaSetEapAKA(char *pcmdStr, BYTE *aBuf, int *aLen)
     return WFA_SUCCESS;
 }
 
+int xcCmdProcStaSetEapAKAPrime(char *pcmdStr, BYTE *aBuf, int *aLen)
+{
+    caStaSetEapAKAPrime_t *setsec = (caStaSetEapAKAPrime_t *) (aBuf+sizeof(wfaTLV));
+    char *str;
+    caStaSetEapAKAPrime_t defparams = {"", "", "", "", "", ""};
+   
+    if(aBuf == NULL)
+        return WFA_FAILURE;
+   
+    memset(aBuf, 0, *aLen);
+    memcpy((void *)setsec, (void *)&defparams, sizeof(caStaSetEapAKAPrime_t));
+
+    for(;;)
+    {
+        str = strtok_r(NULL, ",", &pcmdStr);
+        if(str == NULL || str[0] == '\0')
+            break;
+
+        if(strcasecmp(str, "interface") == 0)
+        {
+            str = strtok_r(NULL, ",", &pcmdStr);  
+            strncpy(setsec->intf, str, 15);
+        }
+        else if(strcasecmp(str, "ssid") == 0)
+        {
+            str = strtok_r(NULL, ",", &pcmdStr);  
+
+            strncpy(setsec->ssid, str, 64);
+        }
+        else if(strcasecmp(str, "username") == 0)
+        {
+            str = strtok_r(NULL, ",", &pcmdStr);
+            strcpy(setsec->username, str);
+        }
+        else if(strcasecmp(str, "password") == 0)
+        {
+            str = strtok_r(NULL, ",", &pcmdStr);
+            strcpy(setsec->passwd, str);
+        }
+        else if(strcasecmp(str, "keyMgmtType") == 0)
+        {
+            str=strtok_r(NULL, ",", &pcmdStr);
+            strncpy(setsec->keyMgmtType, str, 7);
+        }
+        else if(strcasecmp(str, "encpType") == 0)
+        {
+            str = strtok_r(NULL, ",", &pcmdStr);
+            strncpy(setsec->encrptype, str, 8);
+        }
+    }
+
+    wfaEncodeTLV(WFA_STA_SET_EAPAKAPRIME_TLV, sizeof(caStaSetEapAKAPrime_t), (BYTE *)setsec, aBuf);
+
+    *aLen = 4+sizeof(caStaSetEapAKAPrime_t);
+
+    return WFA_SUCCESS;
+}
+
+
+
 int xcCmdProcStaSetSystime(char *pcmdStr, BYTE *aBuf, int *aLen)
 {
     caStaSetSystime_t *systime = (caStaSetSystime_t *) (aBuf+sizeof(wfaTLV));
@@ -4725,7 +4955,7 @@ int xcCmdProcStaPresetTestParameters(char *pcmdStr, BYTE *aBuf, int *aLen)
         else if(strcasecmp(str, "mode") == 0)
         {
             str = strtok_r(NULL, ",", &pcmdStr);
-            printf("modeis %s\n", str);
+            printf("mode is %s\n", str);
 
             if(strcasecmp(str, "11b") == 0 || strcasecmp(str, "b") == 0)
                 presetTestParams->wirelessMode = eModeB;
@@ -4743,6 +4973,8 @@ int xcCmdProcStaPresetTestParameters(char *pcmdStr, BYTE *aBuf, int *aLen)
                 presetTestParams->wirelessMode = eModeNL;   // n+abg
             else if(strcasecmp(str, "11ac") == 0)
                 presetTestParams->wirelessMode = eModeAC;
+            else if(strcasecmp(str, "11ax") == 0 || strcasecmp(str, "AX") == 0)
+                presetTestParams->wirelessMode = eModeAX;
 
             presetTestParams->modeFlag = 1;
             printf("\nSetting Mode as %d\n", presetTestParams->wirelessMode);
@@ -4781,41 +5013,41 @@ int xcCmdProcStaPresetTestParameters(char *pcmdStr, BYTE *aBuf, int *aLen)
             if(setvalues != NULL)
             {
                 /* BE */
-                /* str=strtok_r(NULL, ":", &setvalues);
+                str=strtok_r(NULL, ":", &setvalues);
                 if(str != NULL)
                 {
                     if(strcasecmp(str, "enable") == 0)
-                       presetTestParams->noack_be = 2;
+                        presetTestParams->noack_be = 2;
                     else if(strcasecmp(str, "disable") == 0)
-                       presetTestParams->noack_be = 1;
-                 }*/
+                        presetTestParams->noack_be = 1;
+                 }
                 /* BK */
-                /* str=strtok_r(NULL, ":", &setvalues);
-                   if(str != NULL)
-                   {
-                      if(strcasecmp(str, "enable") == 0)
-                         presetTestParams->noack_bk = 2;
-                      else if(strcasecmp(str, "disable") == 0)
-                         presetTestParams->noack_bk = 1;
-                    }*/
+                str=strtok_r(NULL, ":", &setvalues);
+                if(str != NULL)
+                {
+                    if(strcasecmp(str, "enable") == 0)
+                        presetTestParams->noack_bk = 2;
+                    else if(strcasecmp(str, "disable") == 0)
+                        presetTestParams->noack_bk = 1;
+                }
                 /* VI */
-                /*str=strtok_r(NULL, ":", &setvalues);
+                str=strtok_r(NULL, ":", &setvalues);
                 if(str != NULL)
                 {
                     if(strcasecmp(str, "enable") == 0)
                         presetTestParams->noack_vi = 2;
                     else if(strcasecmp(str, "disable") == 0)
                         presetTestParams->noack_vi = 1;
-                }*/
+                }
                 /* VO */
-                /*  str=strtok_r(NULL, ":", &setvalues);
+                str=strtok_r(NULL, ":", &setvalues);
                 if(str != NULL)
                 {
                     if(strcasecmp(str, "enable") == 0)
                        presetTestParams->noack_vo = 2;
                     else if(strcasecmp(str, "disable") == 0)
                        presetTestParams->noack_vo = 1;
-                }*/
+                }
             }
         }
         else if(strcasecmp(str, "ht") == 0)
@@ -5478,6 +5710,9 @@ int xcCmdProcStaSetWireless(char *pcmdStr, BYTE *aBuf, int *aLen)
     char *str;
 
     DPRINT_INFO(WFA_OUT,"xcCmdProcStaSetWireless Starts...");
+    staWirelessParams->ampdu_en=0xFF;
+    staWirelessParams->amsdu_en=0xFF;
+    staWirelessParams->bw_cap  =0xFF;
 
     for(;;)
     {
@@ -5525,6 +5760,53 @@ int xcCmdProcStaSetWireless(char *pcmdStr, BYTE *aBuf, int *aLen)
                 // process addba_reject, ampdu, amsdu, stbc_rx, width, smps, txsp_stream, rxsp_stream, band, DYN_BW_SGNL
                 // SGI80, TXBF, LDPC, Opt_md_notif_ie, nss_mcs_cap, tx_lgi_rate, zero_crc, vht_tkip, vht_wep, bw_sgnl
 
+            }
+            else if(strcasecmp(staWirelessParams->program, "HE") == 0)
+            {
+                str = strtok_r(NULL, ",", &pcmdStr);
+                if(strcasecmp(str, "ampdu") == 0)
+                {
+                    str = strtok_r(NULL, ",", &pcmdStr);
+                    if(strcasecmp(str, "enable") == 0) staWirelessParams->ampdu_en=1;
+                    else                               staWirelessParams->ampdu_en=0;
+                }
+                else if(strcasecmp(str, "amsdu") == 0)
+                {
+                    str = strtok_r(NULL, ",", &pcmdStr);
+                    if(strcasecmp(str, "enable") == 0) staWirelessParams->amsdu_en=1;
+                    else                               staWirelessParams->amsdu_en=0;
+                }
+                else if(strcasecmp(str, "ldpc") == 0)
+                {
+                    str = strtok_r(NULL, ",", &pcmdStr);
+                    if(strcasecmp(str, "enable") == 0) staWirelessParams->ldpc_en=1;
+                    else                               staWirelessParams->ldpc_en=0;
+                }
+                else if(strcasecmp(str, "bcc") == 0)
+                {
+                    str = strtok_r(NULL, ",", &pcmdStr);
+                    if(strcasecmp(str, "enable") == 0) staWirelessParams->bcc_en=1;
+                    else                               staWirelessParams->bcc_en=0;
+                }
+                else if(strcasecmp(str, "width") == 0)
+                {
+                    str = strtok_r(NULL, ",", &pcmdStr);
+                    if(strcasecmp(str, "40") == 0)      staWirelessParams->bw_cap=3;
+                    else if(strcasecmp(str, "80") == 0) staWirelessParams->bw_cap=7;
+                    else                                staWirelessParams->bw_cap=1;
+                }
+                else if(strcasecmp(str, "txsp_stream") == 0)
+                {
+                    str = strtok_r(NULL, ",", &pcmdStr);
+                    if(strcasecmp(str, "2SS") == 0)     staWirelessParams->txsp_stream=2;
+                    else                                staWirelessParams->txsp_stream=1;
+                }
+                else if(strcasecmp(str, "rxsp_stream") == 0)
+                {
+                    str = strtok_r(NULL, ",", &pcmdStr);
+                    if(strcasecmp(str, "2SS") == 0)     staWirelessParams->rxsp_stream=2;
+                    else                                staWirelessParams->rxsp_stream=1;
+                }
             }
         }
     }
@@ -5820,6 +6102,7 @@ int xcCmdProcStaSetRFeature(char *pcmdStr, BYTE *aBuf, int *aLen)
         return WFA_FAILURE;
 
     memset(aBuf, 0, *aLen);
+    rfeat->mcs=11;//default value[fixme]
 
     for(;;)
     {
@@ -5873,10 +6156,40 @@ int xcCmdProcStaSetRFeature(char *pcmdStr, BYTE *aBuf, int *aLen)
             str = strtok_r(NULL, ",", &pcmdStr);
             strncpy(rfeat->secchoffset, str, sizeof(rfeat->secchoffset));
         }
+        else if(strcasecmp(str, "NSS_MCS_Opt") == 0)
+        {
+            str = strtok_r(NULL, ";", &pcmdStr);
+            if(strcasecmp(str, "def") == 0)
+            {
+                rfeat->nss = 1; //default value
+            }
+            else rfeat->nss = atoi(str);
+            DPRINT_INFO(WFA_OUT, "NSS: %d\n", rfeat->nss);
+
+            str = strtok_r(NULL, ",", &pcmdStr);
+            if(strcasecmp(str, "def") == 0)
+            {
+                rfeat->mcs = 11; //default value
+            }
+            else rfeat->mcs = atoi(str);
+            DPRINT_INFO(WFA_OUT, "MCS: %d\n", rfeat->mcs);
+        }
+        else if(strcasecmp(str, "GI") == 0)
+        {
+            str = strtok_r(NULL, ",", &pcmdStr);
+            strncpy(rfeat->gi, str, sizeof(rfeat->gi));
+            DPRINT_INFO(WFA_OUT, "GI: %s\n", rfeat->gi);
+        }
+        else if(strcasecmp(str, "LTF") == 0)
+        {
+            str = strtok_r(NULL, ",", &pcmdStr);
+            strncpy(rfeat->ltf, str, sizeof(rfeat->ltf));
+            DPRINT_INFO(WFA_OUT, "LTF: %s\n", rfeat->ltf);
+        }
     }
 
-    wfaEncodeTLV(WFA_STA_SET_RFEATURE_TLV, sizeof(caStaRFeat_t), (BYTE *)rfeat, aBuf);
-    *aLen = 4+sizeof(caStaRFeat_t);
+    wfaEncodeTLV(WFA_STA_SET_RFEATURE_TLV, sizeof(dutCommand_t), (BYTE *)dutcmd, aBuf);
+    *aLen = 4+sizeof(dutCommand_t);
 
     return WFA_SUCCESS;
 }
@@ -5955,7 +6268,7 @@ int xcCmdProcStaCliCommand(char *pcmdStr, BYTE *aBuf, int *aLen)
 {
 
     printf("\n The CA CLI command to DUT is : %s",pcmdStr);
-    printf("\n The CA CLI command to DUT Length : %d",strlen(pcmdStr));
+    printf("\n The CA CLI command to DUT Length : %d",(int)strlen(pcmdStr));
     wfaEncodeTLV(WFA_STA_CLI_CMD_TLV, strlen(pcmdStr), (BYTE *)pcmdStr, aBuf);
 
     *aLen = 4+strlen(pcmdStr);
@@ -7371,6 +7684,32 @@ int xcCmdProcStaGetEventDetails(char *pcmdStr, BYTE *aBuf, int *aLen)
 	return WFA_SUCCESS;
 }
 
+
+int xcCmdProcStaScan(char *pcmdStr, BYTE *aBuf, int *aLen)
+{
+    dutCommand_t *stascan = (dutCommand_t *) (aBuf+sizeof(wfaTLV));
+    char *str;
+
+    for(;;)
+    {
+        str = strtok_r(NULL, ",", &pcmdStr);
+        if(str == NULL || str[0] == '\0')
+            break;
+
+        if(strcasecmp(str, "interface") == 0)
+        {
+            str = strtok_r(NULL, ",", &pcmdStr);
+            strncpy(stascan->intf, str,WFA_IF_NAME_LEN-1);
+            stascan->intf[WFA_IF_NAME_LEN-1]='\0';
+        }
+    }
+
+    wfaEncodeTLV(WFA_STA_SCAN_TLV, sizeof(dutCommand_t), (BYTE *)stascan, aBuf);
+
+    *aLen = 4+sizeof(dutCommand_t);
+    return WFA_SUCCESS;
+
+}
 
 
 

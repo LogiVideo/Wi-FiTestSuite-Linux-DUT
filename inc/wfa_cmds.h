@@ -166,7 +166,7 @@ typedef struct ca_sta_set_eapaka
 {
     char intf[WFA_IF_NAME_LEN];
     char ssid[WFA_SSID_NAME_LEN];
-    char username[64];
+    char username[32];
     char passwd[96];
     char keyMgmtType[8];
     char encrptype[9];
@@ -175,7 +175,20 @@ typedef struct ca_sta_set_eapaka
     int pmf;               /* PMF enable or disable */
 } caStaSetEapAKA_t;
 
+typedef struct ca_sta_set_eapakaprime
+{
+   char intf[WFA_IF_NAME_LEN];
+   char ssid[WFA_SSID_NAME_LEN];
+   char username[32];
+   char passwd[96];
+   char keyMgmtType[8];
+   char encrptype[9];
+} caStaSetEapAKAPrime_t;
+
+
+
 enum sectype {
+    SEC_TYPE_OPEN= 0,
     SEC_TYPE_PSK = 1,
     SEC_TYPE_EAPTLS,
     SEC_TYPE_EAPTTLS,
@@ -183,7 +196,35 @@ enum sectype {
     SEC_TYPE_EAPSIM,
     SEC_TYPE_EAPFAST,
     SEC_TYPE_EAPAKA,
+    SEC_TYPE_EAPAKAPRIME,
 };
+
+typedef struct ca_sta_set_securityCommon
+{
+    char intf[WFA_IF_NAME_LEN];
+    BYTE type; 
+    char ssid[WFA_SSID_NAME_LEN];
+    char keyMgmtType[8]; 
+    int  encpType; 
+    char encrptype[16];
+    int  pmf;               /* PMF enable or disable */
+    char passwd[96];
+    char micAlg[16];
+    char prog[16];
+    BOOL prefer;
+    char username[32];
+    char trustedRootCA[128];
+    char clientCertificate[128];
+    char innerEAP[16];
+    int  peapVersion;
+    char tripletCount;
+    char tripletSet[3][96];
+    char validateServer;
+    char pacFileName[32];
+    char keys[4][32];  /* 26 hex */
+    int  activeKeyIdx;
+} caStaSetSecurityCommon_t;
+
 
 typedef struct ca_sta_set_security
 {
@@ -195,12 +236,15 @@ typedef struct ca_sta_set_security
     union _security
     {
         char                 passphrase[64];       /* PSK */
+        caStaSetEncryption_t sencryp;
+        caStaSetPSK_t        psk;
         caStaSetEapTLS_t     tls;
         caStaSetEapTTLS_t    ttls;
         caStaSetEapSIM_t     sim;
         caStaSetEapPEAP_t    peap;
         caStaSetEapAKA_t     aka;
         caStaSetEapFAST_t    fast;
+        caStaSetEapAKAPrime_t akaprime;
     } secu;
 } caStaSetSecurity_t;
 
@@ -1117,6 +1161,7 @@ typedef enum wfa_WirelessMode
     eModeGN,
     eModeNL,
     eModeAC,
+    eModeAX,
 } wfaWirelessMode;
 
 typedef enum wfa_reset_prog
@@ -1267,6 +1312,10 @@ typedef struct ca_sta_preset_parameters
     BYTE legacyPowerSave;
     BYTE wmmFlag;
     BYTE wmmState;
+    BYTE noack_be;
+    BYTE noack_bk;
+    BYTE noack_vi;
+    BYTE noack_vo;
     BYTE reset;
     BYTE ht;    // temperary for high throughput
     BYTE ftoa;
@@ -1366,6 +1415,13 @@ typedef struct ca_sta_set_wireless
 #define NOACK_VI       2
 #define NOACK_VO       3
     unsigned char noAck[4];
+    unsigned short ampdu_en;
+    unsigned short amsdu_en;
+    unsigned short ldpc_en;
+    unsigned short bcc_en;
+    unsigned short bw_cap;
+    unsigned short txsp_stream;
+    unsigned short rxsp_stream;
 } caStaSetWireless_t;
 
 
@@ -1549,6 +1605,10 @@ typedef struct ca_sta_rfeature
     char chswitchmode[16];
     int offchnum;
     char secchoffset[16];
+    int  nss;
+    int  mcs;
+    char gi[4];
+    char ltf[4];
 } caStaRFeat_t;
 
 typedef struct ca_sta_exec_action

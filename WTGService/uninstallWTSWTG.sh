@@ -1,7 +1,7 @@
 #!/bin/sh
 
 #
-# Copyright (c) 2016 Wi-Fi Alliance
+# Copyright (c) 2014 Wi-Fi Alliance
 # 
 # Permission to use, copy, modify, and/or distribute this software for any 
 # purpose with or without fee is hereby granted, provided that the above 
@@ -16,13 +16,14 @@
 # USE OR PERFORMANCE OF THIS SOFTWARE.
 #
 
-# The Cli shell script should not print any thing on the stdout.
-# It should only print the result, which will be read by main dut program using pipe.
-#
-# Print the return value and result string in the following foramt
-#	<return value>-<result string>
-#	
-#	The retrun value can be 0-success, 1-error ,2-invalid
-#cypress RET=0 -PIN,12345678
-RET=0-PIN,12345678
-echo $RET
+
+# Uninstall the WTG service to system startup
+
+
+sh $PWD/WTGService.sh stop
+rm -f /usr/bin/WTG /usr/bin/wfa_dut /usr/bin/wfa_ca
+rm -f /usr/bin/wfa_con
+rm -f /etc/WTG.conf
+rm -f /etc/rc.local
+rm -f /etc/WfaEndpoint/*
+rmdir  /etc/WfaEndpoint

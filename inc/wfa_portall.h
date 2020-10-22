@@ -19,7 +19,7 @@
 /* The fixed definition for the device interface name */
 /* For different OSes or your platforms, you may not  */
 /* need to use fixed definition                       */
-#define WFA_STAUT_IF        "eth1"
+#define WFA_STAUT_IF        "wlan0"
 
 /* the path to store EAP certificates. This is used   */
 /* for Linux-like OS for wpa_supplicant               */

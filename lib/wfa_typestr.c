@@ -66,6 +66,8 @@ extern int xcCmdProcStaSetWMM(char *pcmStr, BYTE *, int *);
 extern int xcCmdProcStaPresetTestParameters(char *pcmStr, BYTE *, int *);
 extern int xcCmdProcStaSetEapFAST(char *pcmStr, BYTE *, int *);
 extern int xcCmdProcStaSetEapAKA(char *pcmStr, BYTE *, int *);
+extern int xcCmdProcStaSetEapAKAPrime(char *pcmStr, BYTE *, int *);
+
 extern int xcCmdProcStaSetSystime(char *pcmStr, BYTE *, int *);
 
 extern int xcCmdProcStaSet11n(char *pcmStr, BYTE *, int *);
@@ -127,6 +129,8 @@ extern int xcCmdProcStaManageService(char *, BYTE *, int *);
 extern int xcCmdProcStaGetEvents(char *pcmdStr, BYTE *, int *);
 extern int xcCmdProcStaGetEventDetails(char *, BYTE *, int *);
 
+extern int xcCmdProcStaScan(char *, BYTE *, int *);
+
 
 /*
  * Initialize a command name table to its defined type and process function
@@ -176,6 +180,7 @@ typeNameStr_t nameStr[] =
 #endif
     {WFA_STA_SET_EAPFAST_TLV, "sta_set_eapfast", xcCmdProcStaSetEapFAST},
     {WFA_STA_SET_EAPAKA_TLV, "sta_set_eapaka", xcCmdProcStaSetEapAKA},
+    {WFA_STA_SET_EAPAKAPRIME_TLV, "sta_set_eapakaprime", xcCmdProcStaSetEapAKAPrime},
     {WFA_STA_SET_SYSTIME_TLV, "sta_set_systime", xcCmdProcStaSetSystime},
     {WFA_STA_SET_PWRSAVE_TLV, "sta_set_pwrsave", xcCmdProcStaSetPwrSave},
 #ifdef WFA_STA_TB
@@ -226,6 +231,8 @@ typeNameStr_t nameStr[] =
    {WFA_STA_MANAGE_SERVICE_TLV, "sta_manage_service", xcCmdProcStaManageService},
    {WFA_STA_GET_EVENTS_TLV, "sta_get_events", xcCmdProcStaGetEvents},
    {WFA_STA_GET_EVENT_DETAILS_TLV, "sta_get_event_details", xcCmdProcStaGetEventDetails},
+
+   {WFA_STA_SCAN_TLV, "sta_scan", xcCmdProcStaScan},
    
       
    {-1, "", NULL},

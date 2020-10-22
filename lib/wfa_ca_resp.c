@@ -140,8 +140,9 @@ dutCommandRespFuncPtr wfaCmdRespProcFuncTbl[WFA_STA_RESPONSE_END+1] =
 	wfaStaGetEventsResp, /* 83*/
 	wfaStaGetEventDataResp, /* 84*/
     wfaStaGenericResp,      /* 85 */
-	wfaStaExecActionResp,      /* 86 */	
-	
+    wfaStaGenericResp,            /* 86 */
+    wfaStaExecActionResp,         /* 87 */    
+    wfaStaGenericResp,            /* 88 : WFA_STA_SCAN_TLV*/    
 
 };
 
@@ -578,7 +579,7 @@ int wfaStaGetBSSIDResp(BYTE *cmdBuf)
     int done=0;
     dutCmdResponse_t *getBssidResp = (dutCmdResponse_t *) (cmdBuf + 4);
 
-    DPRINT_INFO(WFA_OUT, "Entering wfaStaGetMacAddressResp ...\n");
+    DPRINT_INFO(WFA_OUT, "Entering wfaStaGetBSSIDResp ... \n");
     switch(getBssidResp->status)
     {
     case STATUS_RUNNING:
@@ -717,9 +718,9 @@ int wfaDeviceGetInfoResp(BYTE *cmdBuf)
         break;
 
     case STATUS_COMPLETE:
-        if(dinfo->firmware[0] != '\0' || dinfo->firmware[0] != '\n')
-            sprintf(gRespStr, "status,COMPLETE,firmware,%s\r\n", dinfo->firmware);
-        else
+        //if(dinfo->firmware[0] != '\0' || dinfo->firmware[0] != '\n')
+        //    sprintf(gRespStr, "status,COMPLETE,firmware,%s\r\n", dinfo->firmware);
+        //else
             sprintf(gRespStr, "status,COMPLETE,vendor,%s,model,%s,version,%s\r\n",
                     dinfo->vendor, dinfo->model, dinfo->version);
         DPRINT_INFO(WFA_OUT, "%s\n", gRespStr);

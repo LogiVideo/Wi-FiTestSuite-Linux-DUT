@@ -110,7 +110,11 @@ inline void wfa_double2timeval(struct timeval *tval, double dval)
     tval->tv_usec = (long int) ((dval - tval->tv_sec) * 1000000);
 }
 
-inline double wfa_ftime_diff(struct timeval *t1, struct timeval *t2)
+/*
+ * CYPRESS
+ * Removing inline keyword To resolve compile error on FC22
+ */
+double wfa_ftime_diff(struct timeval *t1, struct timeval *t2)
 {
     double dtime;
 
